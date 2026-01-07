@@ -140,10 +140,11 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 	defer dbInstance.Close()
 
 	upper := strings.ToUpper(strings.TrimSpace(query))
+	isSelect := strings.HasPrefix(upper, "SELECT")
 	var data interface{}
 	var historyItem *models.SQLHistoryItem
 
-	if strings.HasPrefix(upper, "SELECT") {
+	if isSelect {
 		rows, err := dbInstance.Query(query)
 		if err != nil {
 			return &models.GameResponse{Success: false, Error: err.Error(), State: p.getCurrentState(caso, progression)}, nil, nil
@@ -163,14 +164,19 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		}
 	}
 
-	validationResponse := p.runValidations(caso, progression, dbInstance, data)
-	if validationResponse != nil {
-		return validationResponse, historyItem, nil
+	valRes, valType := p.runValidations(caso, progression, dbInstance, data)
+	if valRes != nil {
+		if isSelect && valType != "result_check" && valRes.Error == "" {
+			if valRes.State.CurrentPuzzle == progression.CurrentPuzzle {
+				valRes.Narrative = "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
+			}
+		}
+		return valRes, historyItem, nil
 	}
 
-	msg := "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
-	if !strings.HasPrefix(upper, "SELECT") {
-		msg = "Comando executado com sucesso. O banco de dados foi atualizado."
+	msg := "Comando executado com sucesso. O banco de dados foi atualizado."
+	if isSelect {
+		msg = "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
 	}
 
 	return &models.GameResponse{
@@ -181,7 +187,7 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 	}, historyItem, nil
 }
 
-func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progression, dbInstance *sql.DB, lastData interface{}) *models.GameResponse {
+func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progression, dbInstance *sql.DB, lastData interface{}) (*models.GameResponse, string) {
 	for _, v := range caso.Validations {
 		if v.Puzzle == prog.CurrentPuzzle {
 			var passed bool
@@ -197,24 +203,23 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 					prog.CurrentPuzzle = v.NextPuzzle
 					prog.CurrentFocus = "none"
 				}
-				newState := p.getCurrentState(caso, prog)
 				return &models.GameResponse{
 					Success:   true,
 					Narrative: v.SuccessNarrative,
 					Data:      lastData,
-					State:     newState,
-				}
+					State:     p.getCurrentState(caso, prog),
+				}, v.Type
 			} else if v.FailureNarrative != "" {
 				return &models.GameResponse{
 					Success:   true,
 					Narrative: v.FailureNarrative,
 					Data:      lastData,
 					State:     p.getCurrentState(caso, prog),
-				}
+				}, v.Type
 			}
 		}
 	}
-	return nil
+	return nil, ""
 }
 
 func (p *GameProcessor) serializeRows(rows *sql.Rows) []map[string]interface{} {
