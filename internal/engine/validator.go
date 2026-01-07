@@ -17,7 +17,7 @@ func (v *Validator) ValidateSQLCommand(caso *models.Case, progression *models.Pr
 	for _, req := range caso.FocusRequirements {
 		if req.Puzzle == progression.CurrentPuzzle {
 			for _, cmdType := range req.CommandTypes {
-				if strings.Contains(upper, cmdType) && progression.CurrentFocus != req.RequiredFocus {
+				if strings.Contains(upper, cmdType) && !strings.EqualFold(progression.CurrentFocus, req.RequiredFocus) {
 					return models.APIError{
 						Message: req.ErrorMessage,
 						Code:    models.ErrFocusRequired,
