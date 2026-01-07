@@ -39,7 +39,11 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	caso, err := h.MongoManager.GetCase(req.CaseID)
 	if err != nil {
-		http.Error(w, `{"error": "Caso não encontrado"}`, http.StatusNotFound)
+		if strings.Contains(err.Error(), "no documents") {
+			http.Error(w, `{"error": "Caso não encontrado"}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error": "Erro de conexão com o banco"}`, http.StatusInternalServerError)
+		}
 		return
 	}
 
