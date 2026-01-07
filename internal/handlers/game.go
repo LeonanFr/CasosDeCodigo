@@ -90,7 +90,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if response.Success {
-		if oldPuzzle != response.State.CurrentPuzzle || oldFocus != response.State.CurrentFocus {
+		if oldFocus != response.State.CurrentFocus || oldPuzzle != response.State.CurrentPuzzle {
 			h.MongoManager.UpdateUserProgress(userID, req.CaseID, response.State.CurrentPuzzle, response.State.CurrentFocus)
 		}
 

@@ -69,7 +69,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		isMatch := false
 		if resp.Command == command {
 			isMatch = true
-		} else if strings.HasPrefix(command, "OLHAR") && strings.Contains(resp.Command, command) {
+		} else if strings.HasPrefix(command, "OLHAR") && strings.HasPrefix(command, resp.Command) {
 			isMatch = true
 		} else if (baseCmd == "AJUDA" || baseCmd == "HELP") && resp.Command == baseCmd && len(parts) == 1 {
 			isMatch = true
@@ -79,7 +79,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 			newFocus := progression.CurrentFocus
 			if strings.HasPrefix(command, "OLHAR") {
 				if len(parts) > 1 {
-					newFocus = strings.ToLower(parts[1])
+					newFocus = parts[1]
 				}
 			}
 
@@ -88,9 +88,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 			}
 
 			progression.CurrentFocus = newFocus
-
 			state := p.getCurrentState(caso, progression)
-			state.CurrentFocus = newFocus
 
 			return &models.GameResponse{
 				Success:   true,
@@ -144,7 +142,7 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		defer rows.Close()
 		data = p.serializeRows(rows)
 	} else {
-		_, err := dbInstance.Exec(query)
+		_, err = dbInstance.Exec(query)
 		if err != nil {
 			return &models.GameResponse{Success: false, Error: err.Error(), State: p.getCurrentState(caso, progression)}, nil, nil
 		}
