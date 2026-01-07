@@ -65,38 +65,47 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		}
 	}
 
-	for _, resp := range caso.CommandResponses {
+	var bestMatch *models.CommandResponse
+	for i := range caso.CommandResponses {
+		resp := caso.CommandResponses[i]
+		upperRespCmd := strings.ToUpper(resp.Command)
+
 		isMatch := false
-		if resp.Command == command {
+		if upperRespCmd == command {
 			isMatch = true
-		} else if strings.HasPrefix(command, "OLHAR") && strings.HasPrefix(command, resp.Command) {
-			isMatch = true
-		} else if (baseCmd == "AJUDA" || baseCmd == "HELP") && resp.Command == baseCmd && len(parts) == 1 {
+		} else if strings.HasPrefix(command, "OLHAR") && upperRespCmd != "" && strings.HasPrefix(command, upperRespCmd) {
 			isMatch = true
 		}
 
 		if isMatch && p.checkCondition(resp, progression) {
-			newFocus := progression.CurrentFocus
-			if strings.HasPrefix(command, "OLHAR") {
-				if len(parts) > 1 {
-					newFocus = parts[1]
-				}
-			}
-
-			if command == "SAIR" || command == "FECHAR" || command == "PARAR" {
-				newFocus = "none"
-			}
-
-			progression.CurrentFocus = newFocus
-			state := p.getCurrentState(caso, progression)
-
-			return &models.GameResponse{
-				Success:   true,
-				Narrative: resp.Response,
-				State:     state,
+			if bestMatch == nil || len(resp.Command) > len(bestMatch.Command) {
+				bestMatch = &resp
 			}
 		}
 	}
+
+	if bestMatch != nil {
+		newFocus := progression.CurrentFocus
+		if strings.HasPrefix(command, "OLHAR") {
+			if len(parts) > 1 {
+				newFocus = parts[1]
+			}
+		}
+
+		if command == "SAIR" || command == "FECHAR" || command == "PARAR" {
+			newFocus = "none"
+		}
+
+		progression.CurrentFocus = newFocus
+		state := p.getCurrentState(caso, progression)
+
+		return &models.GameResponse{
+			Success:   true,
+			Narrative: bestMatch.Response,
+			State:     state,
+		}
+	}
+
 	return nil
 }
 

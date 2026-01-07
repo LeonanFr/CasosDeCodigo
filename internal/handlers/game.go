@@ -61,7 +61,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			CurrentFocus:  "none",
 			SQLHistory:    []models.SQLHistoryItem{},
 		}
-		h.MongoManager.CreateProgression(progression)
+		_ = h.MongoManager.SaveProgression(progression)
 	}
 
 	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
@@ -91,11 +91,11 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	if response.Success {
 		if oldFocus != response.State.CurrentFocus || oldPuzzle != response.State.CurrentPuzzle {
-			h.MongoManager.UpdateUserProgress(userID, req.CaseID, response.State.CurrentPuzzle, response.State.CurrentFocus)
+			_ = h.MongoManager.UpdateUserProgress(userID, req.CaseID, response.State.CurrentPuzzle, response.State.CurrentFocus)
 		}
 
 		if historyItem != nil && historyItem.Query != "RESET_CASE" && !response.IsDebug {
-			h.MongoManager.AddSQLHistory(userID, req.CaseID, *historyItem)
+			_ = h.MongoManager.AddSQLHistory(userID, req.CaseID, *historyItem)
 		}
 	}
 
