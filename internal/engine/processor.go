@@ -87,6 +87,8 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 				newFocus = "none"
 			}
 
+			progression.CurrentFocus = newFocus
+
 			state := p.getCurrentState(caso, progression)
 			state.CurrentFocus = newFocus
 
