@@ -131,8 +131,8 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 			SQLHistory:    []models.SQLHistoryItem{},
 		}
 
-		if err := h.MongoManager.CreateProgression(progression); err != nil {
-			http.Error(w, `{"error": "Erro ao criar progresso"}`, http.StatusInternalServerError)
+		if err := h.MongoManager.UpsertProgression(progression); err != nil {
+			http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
 			return
 		}
 	}
