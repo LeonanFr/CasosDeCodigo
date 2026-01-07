@@ -168,10 +168,16 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		return validationResponse, historyItem, nil
 	}
 
+	msg := "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
+	if !strings.HasPrefix(upper, "SELECT") {
+		msg = "Comando executado com sucesso. O banco de dados foi atualizado."
+	}
+
 	return &models.GameResponse{
-		Success: true,
-		Data:    data,
-		State:   p.getCurrentState(caso, progression),
+		Success:   true,
+		Narrative: msg,
+		Data:      data,
+		State:     p.getCurrentState(caso, progression),
 	}, historyItem, nil
 }
 
@@ -179,14 +185,11 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 	for _, v := range caso.Validations {
 		if v.Puzzle == prog.CurrentPuzzle {
 			var passed bool
-			if v.Type == "result_check" || v.Type == "table_check" || v.Type == "table_complete_check" || v.Type == "sql_check" {
-				var count interface{}
-				err := dbInstance.QueryRow(v.CheckSQL).Scan(&count)
-				if err == nil {
-					if fmt.Sprintf("%v", count) == v.ExpectValue {
-						passed = true
-					}
-				}
+			var count interface{}
+			err := dbInstance.QueryRow(v.CheckSQL).Scan(&count)
+
+			if err == nil && fmt.Sprintf("%v", count) == v.ExpectValue {
+				passed = true
 			}
 
 			if passed {
@@ -194,14 +197,19 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 					prog.CurrentPuzzle = v.NextPuzzle
 					prog.CurrentFocus = "none"
 				}
-
 				newState := p.getCurrentState(caso, prog)
-
 				return &models.GameResponse{
 					Success:   true,
 					Narrative: v.SuccessNarrative,
 					Data:      lastData,
 					State:     newState,
+				}
+			} else if v.FailureNarrative != "" {
+				return &models.GameResponse{
+					Success:   true,
+					Narrative: v.FailureNarrative,
+					Data:      lastData,
+					State:     p.getCurrentState(caso, prog),
 				}
 			}
 		}

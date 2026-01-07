@@ -55,13 +55,14 @@ type CommandResponse struct {
 }
 
 type Validation struct {
-	Puzzle           int    `bson:"puzzle" json:"puzzle"`
-	Type             string `bson:"type" json:"type"`
-	CheckSQL         string `bson:"check_sql" json:"check_sql"`
-	ExpectValue      string `bson:"expect_value" json:"expect_value"`
-	SuccessNarrative string `bson:"success_narrative" json:"success_narrative"`
-	UnlocksNext      bool   `bson:"unlocks_next" json:"unlocks_next"`
-	NextPuzzle       int    `bson:"next_puzzle" json:"next_puzzle"`
+	Puzzle           int    `json:"puzzle" bson:"puzzle"`
+	Type             string `json:"type" bson:"type"`
+	CheckSQL         string `json:"check_sql" bson:"check_sql"`
+	ExpectValue      string `json:"expect_value" bson:"expect_value"`
+	SuccessNarrative string `json:"success_narrative" bson:"success_narrative"`
+	FailureNarrative string `json:"failure_narrative,omitempty" bson:"failure_narrative,omitempty"`
+	UnlocksNext      bool   `json:"unlocks_next" bson:"unlocks_next"`
+	NextPuzzle       int    `json:"next_puzzle" bson:"next_puzzle"`
 }
 
 type FocusRequirement struct {
