@@ -181,16 +181,15 @@ func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 	defer cancel()
 
 	p.UpdatedAt = time.Now()
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = p.UpdatedAt
+	}
 
 	filter := bson.M{"user_id": p.UserID, "case_id": p.CaseID}
 
-	opts := options.Update().SetUpsert(true)
-	update := bson.M{
-		"$set":         p,
-		"$setOnInsert": bson.M{"created_at": time.Now()},
-	}
+	opts := options.Replace().SetUpsert(true)
 
-	_, err := m.ProgressionColl.UpdateOne(ctx, filter, update, opts)
+	_, err := m.ProgressionColl.ReplaceOne(ctx, filter, p, opts)
 	return err
 }
 
