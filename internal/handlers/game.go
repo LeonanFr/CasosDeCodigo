@@ -39,11 +39,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	caso, err := h.MongoManager.GetCase(req.CaseID)
 	if err != nil {
-		if strings.Contains(err.Error(), "no documents") {
-			http.Error(w, `{"error": "Caso não encontrado"}`, http.StatusNotFound)
-		} else {
-			http.Error(w, `{"error": "Erro de conexão com o banco"}`, http.StatusInternalServerError)
-		}
+		http.Error(w, `{"error": "Caso não encontrado"}`, http.StatusNotFound)
 		return
 	}
 
@@ -61,7 +57,10 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			CurrentFocus:  "none",
 			SQLHistory:    []models.SQLHistoryItem{},
 		}
-		_ = h.MongoManager.SaveProgression(progression)
+		if err := h.MongoManager.UpsertProgression(progression); err != nil {
+			http.Error(w, `{"error": "Erro ao criar progresso"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
@@ -91,7 +90,9 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	if response.Success {
 		if oldFocus != response.State.CurrentFocus || oldPuzzle != response.State.CurrentPuzzle {
-			_ = h.MongoManager.UpdateUserProgress(userID, req.CaseID, response.State.CurrentPuzzle, response.State.CurrentFocus)
+			progression.CurrentPuzzle = response.State.CurrentPuzzle
+			progression.CurrentFocus = response.State.CurrentFocus
+			_ = h.MongoManager.UpsertProgression(progression)
 		}
 
 		if historyItem != nil && historyItem.Query != "RESET_CASE" && !response.IsDebug {

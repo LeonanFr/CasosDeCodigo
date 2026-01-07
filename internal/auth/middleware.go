@@ -31,18 +31,22 @@ func Middleware(next http.Handler) http.Handler {
 		}
 
 		var guestID primitive.ObjectID
-		if guestHeader != "" {
+		var exists bool
+
+		if guestHeader != "" && guestHeader != "null" && guestHeader != "undefined" {
 			id, err := primitive.ObjectIDFromHex(guestHeader)
 			if err == nil {
 				guestID = id
-			} else {
-				guestID = primitive.NewObjectID()
+				exists = true
 			}
-		} else {
+		}
+
+		if !exists {
 			guestID = primitive.NewObjectID()
 		}
 
 		w.Header().Set("X-Guest-ID", guestID.Hex())
+
 		ctx := context.WithValue(r.Context(), userContextKey, guestID)
 		ctx = context.WithValue(ctx, isGuestKey, true)
 		next.ServeHTTP(w, r.WithContext(ctx))

@@ -176,51 +176,24 @@ func (m *MongoManager) GetProgression(userID primitive.ObjectID, caseID string) 
 	return &progression, nil
 }
 
-func (m *MongoManager) CreateProgression(progression *models.Progression) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	progression.CreatedAt = time.Now()
-	progression.UpdatedAt = time.Now()
-
-	result, err := m.ProgressionColl.InsertOne(ctx, progression)
-	if err != nil {
-		return err
-	}
-
-	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
-		progression.ID = oid
-	}
-	return nil
-}
-
-func (m *MongoManager) SaveProgression(p *models.Progression) error {
+func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	p.UpdatedAt = time.Now()
-	_, err := m.ProgressionColl.ReplaceOne(
-		ctx,
-		bson.M{"user_id": p.UserID, "case_id": p.CaseID},
-		p,
-		options.Replace().SetUpsert(true),
-	)
+
+	filter := bson.M{"user_id": p.UserID, "case_id": p.CaseID}
+
+	opts := options.Update().SetUpsert(true)
+	update := bson.M{
+		"$set":         p,
+		"$setOnInsert": bson.M{"created_at": time.Now()},
+	}
+
+	_, err := m.ProgressionColl.UpdateOne(ctx, filter, update, opts)
 	return err
 }
 
-func (m *MongoManager) UpdateProgression(progression *models.Progression) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	progression.UpdatedAt = time.Now()
-
-	_, err := m.ProgressionColl.ReplaceOne(
-		ctx,
-		bson.M{"_id": progression.ID},
-		progression,
-	)
-	return err
-}
 func (m *MongoManager) ResetProgression(userID primitive.ObjectID, caseID string, startingPuzzle int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

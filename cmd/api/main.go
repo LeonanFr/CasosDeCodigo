@@ -62,6 +62,7 @@ func main() {
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Guest-ID"},
+		ExposedHeaders:   []string{"X-Guest-ID"},
 		AllowCredentials: true,
 		Debug:            false,
 	})
