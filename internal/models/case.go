@@ -36,6 +36,7 @@ type CaseConfig struct {
 type Puzzle struct {
 	Number    int      `bson:"number" json:"number"`
 	Narrative string   `bson:"narrative" json:"narrative"`
+	ImageKey  string   `bson:"image_key,omitempty" json:"image_key,omitempty"`
 	Tables    []string `bson:"tables" json:"tables"`
 	Commands  []string `bson:"commands" json:"commands"`
 }
@@ -52,6 +53,7 @@ type CommandResponse struct {
 	Condition string `bson:"condition" json:"condition"`
 	Value     string `bson:"value" json:"value"`
 	Response  string `bson:"response" json:"response"`
+	ImageKey  string `bson:"image_key,omitempty" json:"image_key,omitempty"`
 }
 
 type Validation struct {
@@ -60,7 +62,9 @@ type Validation struct {
 	CheckSQL         string `json:"check_sql" bson:"check_sql"`
 	ExpectValue      string `json:"expect_value" bson:"expect_value"`
 	SuccessNarrative string `json:"success_narrative" bson:"success_narrative"`
+	SuccessImageKey  string `json:"success_image_key,omitempty" bson:"success_image_key,omitempty"`
 	FailureNarrative string `json:"failure_narrative,omitempty" bson:"failure_narrative,omitempty"`
+	FailureImageKey  string `json:"failure_image_key,omitempty" bson:"failure_image_key,omitempty"`
 	UnlocksNext      bool   `json:"unlocks_next" bson:"unlocks_next"`
 	NextPuzzle       int    `json:"next_puzzle" bson:"next_puzzle"`
 }

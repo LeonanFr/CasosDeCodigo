@@ -44,8 +44,20 @@ func main() {
 
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status": "ok"}`))
+		_, err := w.Write([]byte(`{"status": "ok"}`))
+		if err != nil {
+			return
+		}
 	}).Methods("GET")
+
+	staticDir := "./assets"
+	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
+		if err := os.Mkdir(staticDir, os.ModePerm); err != nil {
+			log.Fatalf("Erro ao criar diretório de assets: %v", err)
+		}
+	}
+
+	router.PathPrefix("/assets/").Handler(http.StripPrefix("/assets/", http.FileServer(http.Dir(staticDir))))
 
 	router.HandleFunc("/api/auth/register", authHandler.Register).Methods("POST")
 	router.HandleFunc("/api/auth/login", authHandler.Login).Methods("POST")
