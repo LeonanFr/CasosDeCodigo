@@ -66,30 +66,30 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 	}
 
 	var bestMatch *models.CommandResponse
+
 	for i := range caso.CommandResponses {
-		resp := caso.CommandResponses[i]
-		upperRespCmd := strings.ToUpper(resp.Command)
-
-		isMatch := false
-		if upperRespCmd == command {
-			isMatch = true
-		} else if strings.HasPrefix(command, "OLHAR") && upperRespCmd != "" && strings.HasPrefix(command, upperRespCmd) {
-			isMatch = true
+		resp := &caso.CommandResponses[i]
+		if strings.ToUpper(resp.Command) == command && p.checkCondition(*resp, progression) {
+			bestMatch = resp
+			break
 		}
+	}
 
-		if isMatch && p.checkCondition(resp, progression) {
-			if bestMatch == nil || len(resp.Command) > len(bestMatch.Command) {
-				bestMatch = &resp
+	if bestMatch == nil && len(parts) > 1 {
+		verb := strings.ToUpper(parts[0])
+		for i := range caso.CommandResponses {
+			resp := &caso.CommandResponses[i]
+			if strings.ToUpper(resp.Command) == verb && p.checkCondition(*resp, progression) {
+				bestMatch = resp
+				break
 			}
 		}
 	}
 
 	if bestMatch != nil {
 		newFocus := progression.CurrentFocus
-		if strings.HasPrefix(command, "OLHAR") {
-			if len(parts) > 1 {
-				newFocus = parts[1]
-			}
+		if strings.HasPrefix(command, "OLHAR") && len(parts) > 1 {
+			newFocus = strings.ToLower(parts[1])
 		}
 
 		if command == "SAIR" || command == "FECHAR" || command == "PARAR" {
