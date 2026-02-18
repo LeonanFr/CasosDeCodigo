@@ -1,13 +1,16 @@
 package models
 
 type GameResponse struct {
-	Success   bool        `json:"success"`
-	Narrative string      `json:"narrative,omitempty"`
-	Data      interface{} `json:"data,omitempty"`
-	Error     string      `json:"error,omitempty"`
-	State     GameState   `json:"state,omitempty"`
-	IsReset   bool        `json:"is_reset,omitempty"`
-	IsDebug   bool        `json:"is_debug,omitempty"`
+	Success         bool        `json:"success"`
+	Narrative       string      `json:"narrative,omitempty"`
+	Data            interface{} `json:"data,omitempty"`
+	Error           string      `json:"error,omitempty"`
+	State           GameState   `json:"state,omitempty"`
+	IsReset         bool        `json:"is_reset,omitempty"`
+	IsDebug         bool        `json:"is_debug,omitempty"`
+	ImageKey        string      `json:"image_key,omitempty"`
+	SuccessImageKey string      `json:"success_image_key,omitempty"`
+	FailureImageKey string      `json:"failure_image_key,omitempty"`
 }
 
 type ExecuteRequest struct {

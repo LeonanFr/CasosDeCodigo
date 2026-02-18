@@ -102,6 +102,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: bestMatch.Response,
+			ImageKey:  bestMatch.ImageKey,
 			State:     state,
 		}
 	}
