@@ -49,11 +49,13 @@ type Schema struct {
 }
 
 type CommandResponse struct {
-	Command   string `bson:"command" json:"command"`
-	Condition string `bson:"condition" json:"condition"`
-	Value     string `bson:"value" json:"value"`
-	Response  string `bson:"response" json:"response"`
-	ImageKey  string `bson:"image_key,omitempty" json:"image_key,omitempty"`
+	Command     string `bson:"command" json:"command"`
+	Condition   string `bson:"condition" json:"condition"`
+	Value       string `bson:"value" json:"value"`
+	Response    string `bson:"response" json:"response"`
+	ImageKey    string `bson:"image_key,omitempty" json:"image_key,omitempty"`
+	UnlocksNext bool   `bson:"unlocks_next,omitempty" json:"unlocks_next,omitempty"`
+	NextPuzzle  int    `bson:"next_puzzle,omitempty" json:"next_puzzle,omitempty"`
 }
 
 type Validation struct {

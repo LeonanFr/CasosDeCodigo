@@ -99,6 +99,12 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.CurrentFocus = newFocus
 		state := p.getCurrentState(caso, progression)
 
+		if bestMatch.UnlocksNext {
+			progression.CurrentPuzzle = bestMatch.NextPuzzle
+			progression.CurrentFocus = "none"
+			state = p.getCurrentState(caso, progression)
+		}
+
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: bestMatch.Response,
