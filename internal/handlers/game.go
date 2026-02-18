@@ -92,6 +92,11 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		if oldFocus != response.State.CurrentFocus || oldPuzzle != response.State.CurrentPuzzle {
 			progression.CurrentPuzzle = response.State.CurrentPuzzle
 			progression.CurrentFocus = response.State.CurrentFocus
+
+			if progression.CurrentPuzzle >= len(caso.Puzzles) {
+				progression.Completed = true
+			}
+
 			_ = h.MongoManager.UpsertProgression(progression)
 		}
 

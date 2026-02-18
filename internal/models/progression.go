@@ -1,8 +1,9 @@
 package models
 
 import (
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Progression struct {
@@ -14,6 +15,7 @@ type Progression struct {
 	SQLHistory    []SQLHistoryItem   `bson:"sql_history" json:"sql_history"`
 	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
+	Completed     bool               `bson:"completed" json:"completed"` // ADICIONE ESTA LINHA
 }
 
 type SQLHistoryItem struct {
