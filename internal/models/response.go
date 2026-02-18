@@ -8,7 +8,7 @@ type GameResponse struct {
 	State           GameState   `json:"state,omitempty"`
 	IsReset         bool        `json:"is_reset,omitempty"`
 	IsDebug         bool        `json:"is_debug,omitempty"`
-	ImageKey        string      `json:"image_key,omitempty"`
+	ImageKey        string      `json:"image_key"`
 	SuccessImageKey string      `json:"success_image_key,omitempty"`
 	FailureImageKey string      `json:"failure_image_key,omitempty"`
 }

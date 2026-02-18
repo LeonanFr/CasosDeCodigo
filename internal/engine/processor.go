@@ -186,11 +186,14 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		msg = "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
 	}
 
+	state := p.getCurrentState(caso, progression)
+
 	return &models.GameResponse{
 		Success:   true,
 		Narrative: msg,
 		Data:      data,
-		State:     p.getCurrentState(caso, progression),
+		ImageKey:  state.ImageKey,
+		State:     state,
 	}, historyItem, nil
 }
 
@@ -210,12 +213,14 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 					prog.CurrentPuzzle = v.NextPuzzle
 					prog.CurrentFocus = "none"
 				}
+				state := p.getCurrentState(caso, prog)
 				return &models.GameResponse{
 					Success:         true,
 					Narrative:       v.SuccessNarrative,
 					SuccessImageKey: v.SuccessImageKey,
+					ImageKey:        state.ImageKey,
 					Data:            lastData,
-					State:           p.getCurrentState(caso, prog),
+					State:           state,
 				}, v.Type
 			} else if v.FailureNarrative != "" {
 				return &models.GameResponse{
