@@ -146,7 +146,10 @@ func (m *MongoManager) GetAllCases() ([]models.Case, error) {
 	defer cancel()
 
 	cases := make([]models.Case, 0)
-	cursor, err := m.CasesColl.Find(ctx, bson.M{})
+
+	findOptions := options.Find().SetSort(bson.D{{Key: "order", Value: 1}})
+
+	cursor, err := m.CasesColl.Find(ctx, bson.M{}, findOptions)
 	if err != nil {
 		return nil, err
 	}
