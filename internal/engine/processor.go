@@ -218,7 +218,7 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 					Success:         true,
 					Narrative:       v.SuccessNarrative,
 					SuccessImageKey: v.SuccessImageKey,
-					ImageKey:        state.ImageKey,
+					ImageKey:        "",
 					Data:            lastData,
 					State:           state,
 				}, v.Type
