@@ -30,4 +30,5 @@ type GameState struct {
 	Tables        []string `json:"tables"`
 	Commands      []string `json:"commands"`
 	Narrative     string   `json:"narrative,omitempty"`
+	ImageKey      string   `json:"image_key,omitempty"`
 }

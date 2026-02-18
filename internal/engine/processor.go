@@ -205,17 +205,19 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 					prog.CurrentFocus = "none"
 				}
 				return &models.GameResponse{
-					Success:   true,
-					Narrative: v.SuccessNarrative,
-					Data:      lastData,
-					State:     p.getCurrentState(caso, prog),
+					Success:         true,
+					Narrative:       v.SuccessNarrative,
+					SuccessImageKey: v.SuccessImageKey,
+					Data:            lastData,
+					State:           p.getCurrentState(caso, prog),
 				}, v.Type
 			} else if v.FailureNarrative != "" {
 				return &models.GameResponse{
-					Success:   true,
-					Narrative: v.FailureNarrative,
-					Data:      lastData,
-					State:     p.getCurrentState(caso, prog),
+					Success:         true,
+					Narrative:       v.FailureNarrative,
+					FailureImageKey: v.FailureImageKey,
+					Data:            lastData,
+					State:           p.getCurrentState(caso, prog),
 				}, v.Type
 			}
 		}
@@ -254,6 +256,7 @@ func (p *GameProcessor) getCurrentState(caso *models.Case, prog *models.Progress
 			state.Tables = pz.Tables
 			state.Commands = pz.Commands
 			state.Narrative = pz.Narrative
+			state.ImageKey = pz.ImageKey
 		}
 	}
 	return state
