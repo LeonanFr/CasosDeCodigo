@@ -192,7 +192,7 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		Success:   true,
 		Narrative: msg,
 		Data:      data,
-		ImageKey:  state.ImageKey,
+		ImageKey:  "",
 		State:     state,
 	}, historyItem, nil
 }
