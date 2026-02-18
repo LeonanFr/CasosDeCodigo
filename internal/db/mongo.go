@@ -190,9 +190,16 @@ func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 
 	filter := bson.M{"user_id": p.UserID, "case_id": p.CaseID}
 
+	var existing models.Progression
+	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&existing)
+
+	if err == nil && existing.Completed {
+		p.Completed = true
+	}
+
 	opts := options.Replace().SetUpsert(true)
 
-	_, err := m.ProgressionColl.ReplaceOne(ctx, filter, p, opts)
+	_, err = m.ProgressionColl.ReplaceOne(ctx, filter, p, opts)
 	return err
 }
 
