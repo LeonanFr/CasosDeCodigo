@@ -236,8 +236,9 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 	return nil, ""
 }
 
-func (p *GameProcessor) serializeRows(rows *sql.Rows) []map[string]interface{} {
+func (p *GameProcessor) serializeRows(rows *sql.Rows) models.QueryResult {
 	cols, _ := rows.Columns()
+
 	results := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		columns := make([]interface{}, len(cols))
@@ -245,7 +246,8 @@ func (p *GameProcessor) serializeRows(rows *sql.Rows) []map[string]interface{} {
 		for i := range columns {
 			columnPointers[i] = &columns[i]
 		}
-		rows.Scan(columnPointers...)
+		_ = rows.Scan(columnPointers...)
+
 		m := make(map[string]interface{})
 		for i, colName := range cols {
 			val := columnPointers[i].(*interface{})
@@ -253,7 +255,11 @@ func (p *GameProcessor) serializeRows(rows *sql.Rows) []map[string]interface{} {
 		}
 		results = append(results, m)
 	}
-	return results
+
+	return models.QueryResult{
+		Columns: cols,
+		Rows:    results,
+	}
 }
 
 func (p *GameProcessor) getCurrentState(caso *models.Case, prog *models.Progression) models.GameState {

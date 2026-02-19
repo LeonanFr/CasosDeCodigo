@@ -13,6 +13,11 @@ type GameResponse struct {
 	FailureImageKey string      `json:"failure_image_key,omitempty"`
 }
 
+type QueryResult struct {
+	Columns []string                 `json:"columns"`
+	Rows    []map[string]interface{} `json:"rows"`
+}
+
 type ExecuteRequest struct {
 	CaseID string `json:"case_id" validate:"required"`
 	SQL    string `json:"sql" validate:"required"`
