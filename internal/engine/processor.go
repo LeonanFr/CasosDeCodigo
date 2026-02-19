@@ -22,6 +22,8 @@ func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 }
 
 func (p *GameProcessor) ProcessCommand(caso *models.Case, progression *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
+	p.ensurePuzzleCheckpoint(progression, progression.CurrentPuzzle, len(progression.SQLHistory))
+
 	upperCommand := strings.ToUpper(strings.TrimSpace(command))
 
 	if response := p.handleGameCommand(caso, progression, upperCommand); response != nil {
@@ -49,6 +51,24 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 	}
 
 	baseCmd := parts[0]
+
+	if command == "RESET PUZZLE" || command == "RESET_PUZZLE" {
+		p.ensurePuzzleCheckpoint(progression, progression.CurrentPuzzle, len(progression.SQLHistory))
+
+		idx := p.getPuzzleCheckpoint(progression, progression.CurrentPuzzle)
+		if idx < 0 || idx > len(progression.SQLHistory) {
+			idx = len(progression.SQLHistory)
+		}
+
+		progression.SQLHistory = progression.SQLHistory[:idx]
+		progression.CurrentFocus = "none"
+
+		return &models.GameResponse{
+			Success:   true,
+			Narrative: "Checkpoint restaurado. Você volta ao início do puzzle atual.",
+			State:     p.getCurrentState(caso, progression),
+		}
+	}
 
 	if baseCmd == "AJUDA" || baseCmd == "HELP" || baseCmd == "/AJUDA" || baseCmd == "/HELP" {
 		if len(parts) > 1 {
@@ -171,7 +191,7 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 		}
 	}
 
-	valRes, valType := p.runValidations(caso, progression, dbInstance, data)
+	valRes, valType := p.runValidations(caso, progression, dbInstance, data, historyItem)
 	if valRes != nil {
 		if isSelect && valType != "result_check" && valRes.Error == "" {
 			if valRes.State.CurrentPuzzle == progression.CurrentPuzzle {
@@ -197,7 +217,14 @@ func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progre
 	}, historyItem, nil
 }
 
-func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progression, dbInstance *sql.DB, lastData interface{}) (*models.GameResponse, string) {
+func (p *GameProcessor) runValidations(
+	caso *models.Case,
+	prog *models.Progression,
+	dbInstance *sql.DB,
+	lastData interface{},
+	pendingHistory *models.SQLHistoryItem,
+) (*models.GameResponse, string) {
+
 	for _, v := range caso.Validations {
 		if v.Puzzle == prog.CurrentPuzzle {
 			var passed bool
@@ -212,7 +239,14 @@ func (p *GameProcessor) runValidations(caso *models.Case, prog *models.Progressi
 				if v.UnlocksNext {
 					prog.CurrentPuzzle = v.NextPuzzle
 					prog.CurrentFocus = "none"
+
+					effectiveLen := len(prog.SQLHistory)
+					if pendingHistory != nil && strings.TrimSpace(pendingHistory.Query) != "" {
+						effectiveLen++
+					}
+					p.ensurePuzzleCheckpoint(prog, prog.CurrentPuzzle, effectiveLen)
 				}
+
 				state := p.getCurrentState(caso, prog)
 				return &models.GameResponse{
 					Success:         true,
@@ -277,4 +311,26 @@ func (p *GameProcessor) getCurrentState(caso *models.Case, prog *models.Progress
 		}
 	}
 	return state
+}
+
+func (p *GameProcessor) ensurePuzzleCheckpoint(prog *models.Progression, puzzle int, historyLen int) {
+	if prog.PuzzleCheckpoints == nil {
+		prog.PuzzleCheckpoints = map[string]int{}
+	}
+	key := fmt.Sprintf("%d", puzzle)
+	if _, exists := prog.PuzzleCheckpoints[key]; !exists {
+		prog.PuzzleCheckpoints[key] = historyLen
+	}
+}
+
+func (p *GameProcessor) getPuzzleCheckpoint(prog *models.Progression, puzzle int) int {
+	if prog.PuzzleCheckpoints == nil {
+		return -1
+	}
+	key := fmt.Sprintf("%d", puzzle)
+	v, ok := prog.PuzzleCheckpoints[key]
+	if !ok {
+		return -1
+	}
+	return v
 }

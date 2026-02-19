@@ -13,9 +13,12 @@ type Progression struct {
 	CurrentPuzzle int                `bson:"current_puzzle" json:"current_puzzle"`
 	CurrentFocus  string             `bson:"current_focus" json:"current_focus"`
 	SQLHistory    []SQLHistoryItem   `bson:"sql_history" json:"sql_history"`
-	CreatedAt     time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt     time.Time          `bson:"updated_at" json:"updated_at"`
-	Completed     bool               `bson:"completed" json:"completed"` // ADICIONE ESTA LINHA
+
+	PuzzleCheckpoints map[string]int `bson:"puzzle_checkpoints,omitempty" json:"puzzle_checkpoints,omitempty"`
+
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
+	Completed bool      `bson:"completed" json:"completed"`
 }
 
 type SQLHistoryItem struct {

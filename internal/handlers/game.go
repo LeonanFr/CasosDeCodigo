@@ -79,9 +79,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldPuzzle := progression.CurrentPuzzle
-	oldFocus := progression.CurrentFocus
-
 	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
 	if err != nil {
 		http.Error(w, `{"error": "Erro interno"}`, http.StatusInternalServerError)
@@ -89,16 +86,14 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if response.Success {
-		if oldFocus != response.State.CurrentFocus || oldPuzzle != response.State.CurrentPuzzle {
-			progression.CurrentPuzzle = response.State.CurrentPuzzle
-			progression.CurrentFocus = response.State.CurrentFocus
+		progression.CurrentPuzzle = response.State.CurrentPuzzle
+		progression.CurrentFocus = response.State.CurrentFocus
 
-			if progression.CurrentPuzzle >= len(caso.Puzzles) {
-				progression.Completed = true
-			}
-
-			_ = h.MongoManager.UpsertProgression(progression)
+		if progression.CurrentPuzzle >= len(caso.Puzzles) {
+			progression.Completed = true
 		}
+
+		_ = h.MongoManager.UpsertProgression(progression)
 
 		if historyItem != nil && historyItem.Query != "RESET_CASE" && !response.IsDebug {
 			_ = h.MongoManager.AddSQLHistory(userID, req.CaseID, *historyItem)

@@ -212,10 +212,11 @@ func (m *MongoManager) ResetProgression(userID primitive.ObjectID, caseID string
 		bson.M{"user_id": userID, "case_id": caseID},
 		bson.M{
 			"$set": bson.M{
-				"current_puzzle": startingPuzzle,
-				"current_focus":  "none",
-				"sql_history":    []models.SQLHistoryItem{},
-				"updated_at":     time.Now(),
+				"current_puzzle":     startingPuzzle,
+				"current_focus":      "none",
+				"sql_history":        []models.SQLHistoryItem{},
+				"puzzle_checkpoints": bson.M{},
+				"updated_at":         time.Now(),
 			},
 		},
 	)
