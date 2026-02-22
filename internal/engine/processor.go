@@ -159,29 +159,47 @@ func (p *GameProcessor) checkCondition(resp models.CommandResponse, prog *models
 	}
 }
 
-func (p *GameProcessor) executeSQL(caso *models.Case, progression *models.Progression, query string) (*models.GameResponse, *models.SQLHistoryItem, error) {
+func (p *GameProcessor) executeSQL(
+	caso *models.Case,
+	progression *models.Progression,
+	query string,
+) (*models.GameResponse, *models.SQLHistoryItem, error) {
+
 	dbInstance, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer dbInstance.Close()
 
+	_, _ = dbInstance.Exec(`PRAGMA case_sensitive_like = OFF`)
+
+	normalizedQuery := NormalizeSQL(query)
+
 	upper := strings.ToUpper(strings.TrimSpace(query))
 	isSelect := strings.HasPrefix(upper, "SELECT")
+
 	var data interface{}
 	var historyItem *models.SQLHistoryItem
 
 	if isSelect {
-		rows, err := dbInstance.Query(query)
+		rows, err := dbInstance.Query(normalizedQuery)
 		if err != nil {
-			return &models.GameResponse{Success: false, Error: err.Error(), State: p.getCurrentState(caso, progression)}, nil, nil
+			return &models.GameResponse{
+				Success: false,
+				Error:   err.Error(),
+				State:   p.getCurrentState(caso, progression),
+			}, nil, nil
 		}
 		defer rows.Close()
 		data = p.serializeRows(rows)
 	} else {
-		_, err = dbInstance.Exec(query)
+		_, err = dbInstance.Exec(normalizedQuery)
 		if err != nil {
-			return &models.GameResponse{Success: false, Error: err.Error(), State: p.getCurrentState(caso, progression)}, nil, nil
+			return &models.GameResponse{
+				Success: false,
+				Error:   err.Error(),
+				State:   p.getCurrentState(caso, progression),
+			}, nil, nil
 		}
 		historyItem = &models.SQLHistoryItem{
 			Timestamp:   time.Now(),
