@@ -1,18 +1,35 @@
 package engine
 
-import "regexp"
+import (
+	"regexp"
+)
+
+var whereRegex = regexp.MustCompile(`(?is)(.*?\bwhere\b)(.*)`)
 
 func NormalizeSQL(query string) string {
-	q := query
+	matches := whereRegex.FindStringSubmatch(query)
+	if len(matches) != 3 {
+		return query // não tem WHERE → não mexe
+	}
 
-	eq := regexp.MustCompile(`(?i)(\w+)\s*=\s*'([^']*)'`)
-	q = eq.ReplaceAllString(q, "LOWER($1) = LOWER('$2')")
+	head := matches[1]
+	whereClause := matches[2]
 
-	neq := regexp.MustCompile(`(?i)(\w+)\s*!=\s*'([^']*)'`)
-	q = neq.ReplaceAllString(q, "LOWER($1) != LOWER('$2')")
+	whereClause = normalizeWhere(whereClause)
 
-	like := regexp.MustCompile(`(?i)(\w+)\s+LIKE\s+'([^']*)'`)
-	q = like.ReplaceAllString(q, "LOWER($1) LIKE LOWER('$2')")
+	return head + whereClause
+}
 
-	return q
+func normalizeWhere(where string) string {
+
+	eq := regexp.MustCompile(`(?i)\b(\w+)\s*=\s*'([^']*)'`)
+	where = eq.ReplaceAllString(where, "LOWER($1) = LOWER('$2')")
+
+	neq := regexp.MustCompile(`(?i)\b(\w+)\s*!=\s*'([^']*)'`)
+	where = neq.ReplaceAllString(where, "LOWER($1) != LOWER('$2')")
+
+	like := regexp.MustCompile(`(?i)\b(\w+)\s+LIKE\s+'([^']*)'`)
+	where = like.ReplaceAllString(where, "LOWER($1) LIKE LOWER('$2')")
+
+	return where
 }
