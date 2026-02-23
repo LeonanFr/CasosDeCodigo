@@ -85,7 +85,7 @@ func (p *GameProcessor) handleLookList(
 
 	sort.Strings(objects)
 
-	narrative := "➤ Você olha ao redor. Objetos visíveis: " + strings.Join(objects, ", ")
+	narrative := "Você olha ao redor. Objetos visíveis: " + strings.Join(objects, ", ")
 
 	return &models.GameResponse{
 		Success:   true,
