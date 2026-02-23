@@ -5,6 +5,7 @@ import (
 	"casos-de-codigo-api/internal/models"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -43,11 +44,63 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, progression *models.Pr
 
 	return p.executeSQL(caso, progression, command)
 }
+func (p *GameProcessor) handleLookList(
+	caso *models.Case,
+	prog *models.Progression,
+) *models.GameResponse {
 
+	objMap := map[string]bool{}
+
+	for _, resp := range caso.CommandResponses {
+
+		if !strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") {
+			continue
+		}
+
+		if !p.checkCondition(resp, prog) {
+			continue
+		}
+
+		parts := strings.Fields(resp.Command)
+		if len(parts) < 2 {
+			continue
+		}
+
+		obj := strings.ToUpper(parts[1])
+		objMap[obj] = true
+	}
+
+	if len(objMap) == 0 {
+		return &models.GameResponse{
+			Success:   true,
+			Narrative: "Você olha ao redor, mas nada parece chamar sua atenção agora.",
+			State:     p.getCurrentState(caso, prog),
+		}
+	}
+
+	objects := make([]string, 0, len(objMap))
+	for o := range objMap {
+		objects = append(objects, o)
+	}
+
+	sort.Strings(objects)
+
+	narrative := "➤ Você olha ao redor. Objetos visíveis: " + strings.Join(objects, ", ")
+
+	return &models.GameResponse{
+		Success:   true,
+		Narrative: narrative,
+		State:     p.getCurrentState(caso, prog),
+	}
+}
 func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models.Progression, command string) *models.GameResponse {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
 		return nil
+	}
+
+	if parts[0] == "OLHAR" && len(parts) == 1 {
+		return p.handleLookList(caso, progression)
 	}
 
 	baseCmd := parts[0]
@@ -130,6 +183,16 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 			Narrative: bestMatch.Response,
 			ImageKey:  bestMatch.ImageKey,
 			State:     state,
+		}
+	}
+
+	if parts[0] == "OLHAR" && len(parts) > 1 {
+		return &models.GameResponse{
+			Success: true,
+			Narrative: `Você não encontra o que procura. 
+Talvez esse objeto não esteja aqui, talvez não seja importante agora.
+Tente o comando "OLHAR" para listar os objetos disponíveis.`,
+			State: p.getCurrentState(caso, progression),
 		}
 	}
 
