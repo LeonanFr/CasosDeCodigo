@@ -18,6 +18,7 @@ type MongoManager struct {
 	UsersColl       *mongo.Collection
 	CasesColl       *mongo.Collection
 	ProgressionColl *mongo.Collection
+	TelemetryColl   *mongo.Collection
 }
 
 func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
@@ -30,8 +31,7 @@ func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
 		return nil, err
 	}
 
-	err = client.Ping(ctx, nil)
-	if err != nil {
+	if err := client.Ping(ctx, nil); err != nil {
 		return nil, err
 	}
 
@@ -43,10 +43,10 @@ func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
 		UsersColl:       db.Collection("users"),
 		CasesColl:       db.Collection("cases"),
 		ProgressionColl: db.Collection("progression"),
+		TelemetryColl:   db.Collection("telemetry"),
 	}
 
-	err = manager.createIndexes()
-	if err != nil {
+	if err := manager.createIndexes(); err != nil {
 		log.Printf("Erro ao criar índices: %v", err)
 	}
 
@@ -66,18 +66,49 @@ func (m *MongoManager) createIndexes() error {
 
 	progressionIndexes := []mongo.IndexModel{
 		{
-			Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "case_id", Value: 1}},
+			Keys: bson.D{
+				{Key: "user_id", Value: 1},
+				{Key: "case_id", Value: 1},
+			},
 			Options: options.Index().SetUnique(true),
 		},
 	}
 
-	_, err := m.UsersColl.Indexes().CreateMany(ctx, userIndexes)
-	if err != nil {
+	telemetryIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "user_id", Value: 1},
+				{Key: "case_id", Value: 1},
+				{Key: "timestamp", Value: 1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "case_id", Value: 1},
+				{Key: "puzzle_id", Value: 1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "input_type", Value: 1},
+				{Key: "result.status", Value: 1},
+			},
+		},
+	}
+
+	if _, err := m.UsersColl.Indexes().CreateMany(ctx, userIndexes); err != nil {
 		return err
 	}
 
-	_, err = m.ProgressionColl.Indexes().CreateMany(ctx, progressionIndexes)
-	return err
+	if _, err := m.ProgressionColl.Indexes().CreateMany(ctx, progressionIndexes); err != nil {
+		return err
+	}
+
+	if _, err := m.TelemetryColl.Indexes().CreateMany(ctx, telemetryIndexes); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (m *MongoManager) Close() error {
@@ -220,6 +251,18 @@ func (m *MongoManager) ResetProgression(userID primitive.ObjectID, caseID string
 			},
 		},
 	)
+	return err
+}
+
+func (m *MongoManager) SaveTelemetry(event *models.TelemetryEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+
+	_, err := m.TelemetryColl.InsertOne(ctx, event)
 	return err
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type GameHandler struct {
@@ -80,6 +81,68 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
+
+	event := &models.TelemetryEvent{
+		UserID: userID,
+		CaseID: req.CaseID,
+		Puzzle: progression.CurrentPuzzle,
+
+		Timestamp: time.Now(),
+
+		InputType: func() string {
+			cmd := strings.ToUpper(strings.TrimSpace(req.SQL))
+			if strings.HasPrefix(cmd, "SELECT") ||
+				strings.HasPrefix(cmd, "UPDATE") ||
+				strings.HasPrefix(cmd, "INSERT") ||
+				strings.HasPrefix(cmd, "DELETE") {
+				return "sql"
+			}
+			return "game_command"
+		}(),
+
+		Query: func() string {
+			cmd := strings.ToUpper(strings.TrimSpace(req.SQL))
+			if strings.HasPrefix(cmd, "SELECT") ||
+				strings.HasPrefix(cmd, "UPDATE") ||
+				strings.HasPrefix(cmd, "INSERT") ||
+				strings.HasPrefix(cmd, "DELETE") {
+				return req.SQL
+			}
+			return ""
+		}(),
+
+		Command: func() string {
+			cmd := strings.ToUpper(strings.TrimSpace(req.SQL))
+			if strings.HasPrefix(cmd, "SELECT") ||
+				strings.HasPrefix(cmd, "UPDATE") ||
+				strings.HasPrefix(cmd, "INSERT") ||
+				strings.HasPrefix(cmd, "DELETE") {
+				return ""
+			}
+			return req.SQL
+		}(),
+
+		FocusState: progression.CurrentFocus,
+
+		Result: models.TelemetryResult{
+			Status: func() string {
+				if response.Success {
+					return "success"
+				}
+				return "error"
+			}(),
+			ErrorType: func() string {
+				if response.Success {
+					return ""
+				}
+				return "execution"
+			}(),
+			DBChanged: historyItem != nil,
+		},
+	}
+
+	_ = h.MongoManager.SaveTelemetry(event)
+
 	if err != nil {
 		http.Error(w, `{"error": "Erro interno"}`, http.StatusInternalServerError)
 		return
