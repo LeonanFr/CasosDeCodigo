@@ -9,12 +9,13 @@ import (
 type TelemetryEvent struct {
 	ID primitive.ObjectID `bson:"_id,omitempty"`
 
-	UserID primitive.ObjectID `bson:"user_id"`
-	CaseID string             `bson:"case_id"`
-	Puzzle int                `bson:"puzzle_id"`
+	UserID    primitive.ObjectID `bson:"user_id"`
+	CaseID    string             `bson:"case_id"`
+	SessionID primitive.ObjectID `bson:"session_id"`
 
-	Timestamp          time.Time `bson:"timestamp"`
-	TimeSinceCaseStart int       `bson:"time_since_case_start"`
+	Puzzle int `bson:"puzzle_id"`
+
+	Timestamp time.Time `bson:"timestamp"`
 
 	InputType string `bson:"input_type"`
 
