@@ -230,16 +230,34 @@ func (p *GameProcessor) executeSQL(
 	query string,
 ) (*models.GameResponse, *models.SQLHistoryItem, error) {
 
-	parts := strings.Split(query, ";")
-	for i, part := range parts {
-		if strings.TrimSpace(part) == "" {
+	rawParts := strings.Split(query, ";")
+	var parts []string
+	for i, part := range rawParts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+
+			if i == len(rawParts)-1 {
+				continue
+			}
+
 			return &models.GameResponse{
 				Success: false,
-				Error:   fmt.Sprintf("Erro: comando vazio detectado após ';' (posição %d). Remova ';' extras.", i+1),
+				Error:   fmt.Sprintf("Erro: comando vazio detectado entre ';' (posição %d). Remova ';' extras.", i+1),
 				State:   p.getCurrentState(caso, progression),
 			}, nil, nil
 		}
+		parts = append(parts, trimmed)
 	}
+
+	if len(parts) == 0 {
+		return &models.GameResponse{
+			Success: false,
+			Error:   "Nenhum comando SQL válido.",
+			State:   p.getCurrentState(caso, progression),
+		}, nil, nil
+	}
+
+	cleanQuery := strings.Join(parts, "; ")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -252,9 +270,9 @@ func (p *GameProcessor) executeSQL(
 
 	_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
 
-	normalizedQuery := NormalizeSQL(query)
+	normalizedQuery := NormalizeSQL(cleanQuery)
 
-	upper := strings.ToUpper(strings.TrimSpace(query))
+	upper := strings.ToUpper(strings.TrimSpace(cleanQuery))
 	isSelect := strings.HasPrefix(upper, "SELECT")
 
 	var data interface{}
@@ -281,7 +299,7 @@ func (p *GameProcessor) executeSQL(
 	} else {
 		_, err = dbInstance.ExecContext(ctx, normalizedQuery)
 		if err != nil {
-			if ctx.Err() == context.DeadlineExceeded {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return &models.GameResponse{
 					Success: false,
 					Error:   "O comando excedeu o tempo limite",
