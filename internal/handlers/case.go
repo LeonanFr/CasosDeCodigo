@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type CaseHandler struct {
@@ -102,10 +103,6 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 
 func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	userID, ok := auth.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, `{"error": "Não autorizado"}`, http.StatusUnauthorized)
-		return
-	}
 
 	var req models.InitializeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -119,7 +116,25 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(req.CaseID, &userID, nil)
+	var userPtr *primitive.ObjectID
+	var teamPtr *string
+	var matriculaPtr *string
+
+	if req.TeamCode != nil && *req.TeamCode != "" {
+		if req.Matricula == "" {
+			http.Error(w, `{"error": "Matrícula é obrigatória para modo torneio"}`, http.StatusBadRequest)
+			return
+		}
+		teamPtr = req.TeamCode
+		matriculaPtr = &req.Matricula
+	} else if ok {
+		userPtr = &userID
+	} else {
+		http.Error(w, `{"error": "Identificação necessária"}`, http.StatusBadRequest)
+		return
+	}
+
+	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
@@ -127,12 +142,15 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 
 	if progression == nil {
 		progression = &models.Progression{
-			UserID:        &userID,
+			UserID:        userPtr,
+			TeamCode:      teamPtr,
+			Matricula:     req.Matricula,
 			CaseID:        req.CaseID,
 			CurrentPuzzle: caso.Config.StartingPuzzle,
 			CurrentFocus:  "none",
 			SQLHistory:    []models.SQLHistoryItem{},
 			Active:        true,
+			Completed:     false,
 		}
 
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
@@ -147,5 +165,5 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(response)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"casos-de-codigo-api/config"
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/handlers"
@@ -13,22 +14,13 @@ import (
 )
 
 func main() {
-	secret := os.Getenv("JWT_SECRET")
-	if err := auth.InitJWT(secret); err != nil {
+	cfg := config.Load()
+
+	if err := auth.InitJWT(cfg.JWTSecret); err != nil {
 		log.Fatalf("Erro ao inicializar JWT: %v", err)
 	}
 
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	mongoDBName := os.Getenv("MONGO_DB")
-	if mongoDBName == "" {
-		mongoDBName = "casos_de_codigo"
-	}
-
-	mongoManager, err := db.NewMongoManager(mongoURI, mongoDBName)
+	mongoManager, err := db.NewMongoManager(cfg.MongoURI, cfg.MongoDB)
 	if err != nil {
 		log.Fatalf("Erro ao conectar ao MongoDB: %v", err)
 	}
@@ -74,7 +66,9 @@ func main() {
 		"/api/game/team/validate",
 		auth.Middleware(http.HandlerFunc(gameHandler.ValidateTeam)),
 	).Methods("POST")
-	
+
+	router.Handle("/api/game/tournament/status", auth.Middleware(http.HandlerFunc(gameHandler.TournamentStatus))).Methods("GET")
+
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -84,11 +78,6 @@ func main() {
 		Debug:            false,
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("🚀 Servidor iniciado na porta %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, corsHandler.Handler(router)))
+	log.Printf("🚀 Servidor iniciado na porta %s", cfg.Port)
+	log.Fatal(http.ListenAndServe(":"+cfg.Port, corsHandler.Handler(router)))
 }

@@ -82,12 +82,14 @@ func (m *MongoManager) createIndexes() error {
 		{
 			Keys: bson.D{
 				{Key: "team_code", Value: 1},
+				{Key: "matricula", Value: 1},
 				{Key: "case_id", Value: 1},
 			},
 			Options: options.Index().
 				SetUnique(true).
 				SetPartialFilterExpression(bson.M{
 					"team_code": bson.M{"$exists": true},
+					"matricula": bson.M{"$exists": true},
 				}),
 		},
 	}
@@ -191,8 +193,8 @@ func (m *MongoManager) GetProgression(
 	caseID string,
 	userID *primitive.ObjectID,
 	teamCode *string,
+	matricula *string,
 ) (*models.Progression, error) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -201,21 +203,21 @@ func (m *MongoManager) GetProgression(
 	if userID != nil {
 		filter["user_id"] = *userID
 	}
-
 	if teamCode != nil {
 		filter["team_code"] = *teamCode
+	}
+	if matricula != nil && *matricula != "" {
+		filter["matricula"] = *matricula
 	}
 
 	var p models.Progression
 	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&p)
-
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-
 	return &p, nil
 }
 
@@ -289,16 +291,15 @@ func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 		p.CreatedAt = now
 	}
 
-	filter := bson.M{
-		"case_id": p.CaseID,
-	}
-
+	filter := bson.M{"case_id": p.CaseID}
 	if p.UserID != nil {
 		filter["user_id"] = *p.UserID
 	}
-
 	if p.TeamCode != nil {
 		filter["team_code"] = *p.TeamCode
+	}
+	if p.Matricula != "" {
+		filter["matricula"] = p.Matricula
 	}
 
 	var existing models.Progression
@@ -307,13 +308,7 @@ func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 		p.Completed = true
 	}
 
-	_, err = m.ProgressionColl.ReplaceOne(
-		ctx,
-		filter,
-		p,
-		options.Replace().SetUpsert(true),
-	)
-
+	_, err = m.ProgressionColl.ReplaceOne(ctx, filter, p, options.Replace().SetUpsert(true))
 	return err
 }
 

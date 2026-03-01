@@ -4,12 +4,14 @@ import (
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/engine"
+	"casos-de-codigo-api/internal/integration"
 	"casos-de-codigo-api/internal/models"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -29,7 +31,6 @@ func NewGameHandler(mongo *db.MongoManager, factory *db.SQLiteFactory) *GameHand
 
 func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	userID, _ := auth.GetUserIDFromContext(ctx)
 
 	var req models.ExecuteRequest
@@ -43,6 +44,10 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	isTournament := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
+		if req.Matricula == "" {
+			http.Error(w, `{"error":"Matrícula é obrigatória para modo torneio"}`, http.StatusBadRequest)
+			return
+		}
 		teamPtr = req.TeamCode
 		isTournament = true
 	} else {
@@ -55,11 +60,12 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(
-		req.CaseID,
-		userPtr,
-		teamPtr,
-	)
+	var matriculaPtr *string
+	if isTournament {
+		matriculaPtr = &req.Matricula
+	}
+
+	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
 	if err != nil {
 		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
@@ -69,56 +75,66 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		progression = &models.Progression{
 			UserID:        userPtr,
 			TeamCode:      teamPtr,
+			Matricula:     req.Matricula,
 			CaseID:        req.CaseID,
 			CurrentPuzzle: caso.Config.StartingPuzzle,
 			CurrentFocus:  "none",
 			SQLHistory:    []models.SQLHistoryItem{},
 			Active:        true,
+			Completed:     false,
 		}
-
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
 			http.Error(w, `{"error":"Erro ao criar progresso"}`, http.StatusInternalServerError)
 			return
 		}
 	}
 
-	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
-	if cleanSQL == "RESET" {
-		_ = h.MongoManager.ResetProgression(
-			req.CaseID,
-			userPtr,
-			teamPtr,
-			caso.Config.StartingPuzzle,
-		)
-
-		err = json.NewEncoder(w).Encode(models.GameResponse{
-			Success:   true,
-			IsReset:   true,
-			Narrative: "Progresso resetado.",
-			State: models.GameState{
-				CaseID:        req.CaseID,
-				CurrentPuzzle: caso.Config.StartingPuzzle,
-				CurrentFocus:  "none",
-			},
-		})
-		if err != nil {
-			return
-		}
+	if !progression.Active {
+		http.Error(w, `{"error":"Seu acesso foi bloqueado pelo administrador."}`, http.StatusForbidden)
 		return
 	}
 
-	response, historyItem, err := h.GameProcessor.ProcessCommand(
-		caso,
-		progression,
-		req.SQL,
-	)
+	var tournament *models.Tournament
+	if isTournament {
+		tournament, err = h.MongoManager.GetActiveTournament()
+		if err != nil || tournament == nil {
+			http.Error(w, `{"error":"torneio indisponível"}`, http.StatusServiceUnavailable)
+			return
+		}
 
+		allStarted := true
+		for _, caseID := range tournament.CaseIDs {
+			filter := bson.M{"team_code": *teamPtr, "case_id": caseID}
+			count, err := h.MongoManager.ProgressionColl.CountDocuments(ctx, filter)
+			if err != nil || count == 0 {
+				allStarted = false
+				break
+			}
+		}
+
+		if !allStarted {
+			cmd := strings.ToUpper(strings.TrimSpace(req.SQL))
+			if cmd != "STATUS" && cmd != "CLS" && cmd != "AJUDA" {
+				response := models.GameResponse{
+					Success:   true,
+					Narrative: "Aguardando seu time se conectar. Digite CLS quando todos estiverem prontos.",
+					State:     h.GameProcessor.GetCurrentState(caso, progression),
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+		}
+	}
+
+	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
 	if err != nil {
 		http.Error(w, `{"error":"Erro interno"}`, http.StatusInternalServerError)
 		return
 	}
 
 	if response.Success {
+		oldPuzzle := progression.CurrentPuzzle
 		progression.CurrentPuzzle = response.State.CurrentPuzzle
 		progression.CurrentFocus = response.State.CurrentFocus
 
@@ -126,9 +142,21 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			progression.Completed = true
 		}
 
+		if isTournament && tournament != nil {
+			if oldPuzzle < progression.CurrentPuzzle && !progression.PuzzleCompletedEventSent {
+				_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
+				progression.PuzzleCompletedEventSent = true
+			}
+
+			if progression.Completed && !progression.CaseCompletedEventSent {
+				_ = integration.SendCaseEvent(tournament, *teamPtr)
+				progression.CaseCompletedEventSent = true
+			}
+		}
+
 		_ = h.MongoManager.UpsertProgression(progression)
 
-		if historyItem != nil && historyItem.Query != "RESET_CASE" && !response.IsDebug {
+		if historyItem != nil && historyItem.Query != "" && !response.IsDebug {
 			progression.SQLHistory = append(progression.SQLHistory, *historyItem)
 			_ = h.MongoManager.UpsertProgression(progression)
 		}
@@ -148,10 +176,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	if !response.Success {
 		w.WriteHeader(http.StatusBadRequest)
 	}
-	err = json.NewEncoder(w).Encode(response)
-	if err != nil {
-		return
-	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *GameHandler) GetProgress(w http.ResponseWriter, r *http.Request) {

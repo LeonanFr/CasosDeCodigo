@@ -19,15 +19,17 @@ type QueryResult struct {
 }
 
 type ExecuteRequest struct {
-	CaseID   string  `json:"case_id" validate:"required"`
-	SQL      string  `json:"sql" validate:"required"`
-	TeamCode *string `json:"team_code,omitempty"`
+	CaseID    string  `json:"case_id" validate:"required"`
+	SQL       string  `json:"sql" validate:"required"`
+	TeamCode  *string `json:"team_code,omitempty"`
+	Matricula string  `json:"matricula,omitempty"`
 }
 
 type InitializeRequest struct {
-	CaseID string `json:"case_id" validate:"required"`
+	CaseID    string  `json:"case_id" validate:"required"`
+	TeamCode  *string `json:"team_code,omitempty"`
+	Matricula string  `json:"matricula,omitempty"`
 }
-
 type InitializeResponse struct {
 	Progression *Progression `json:"progression"`
 	Case        *Case        `json:"case"`

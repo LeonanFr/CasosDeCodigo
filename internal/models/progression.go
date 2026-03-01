@@ -9,23 +9,25 @@ import (
 type Progression struct {
 	ID primitive.ObjectID `bson:"_id,omitempty"`
 
-	UserID   *primitive.ObjectID `bson:"user_id,omitempty"`
-	TeamCode *string             `bson:"team_code,omitempty"`
+	UserID    *primitive.ObjectID `bson:"user_id,omitempty"`
+	TeamCode  *string             `bson:"team_code,omitempty"`
+	Matricula string              `bson:"matricula,omitempty"` // <-- novo
 
 	CaseID string `bson:"case_id"`
 
-	CurrentPuzzle int
-	CurrentFocus  string
+	CurrentPuzzle     int              `bson:"current_puzzle"`
+	CurrentFocus      string           `bson:"current_focus"`
+	SQLHistory        []SQLHistoryItem `bson:"sql_history"`
+	PuzzleCheckpoints map[string]int   `bson:"puzzle_checkpoints"`
 
-	SQLHistory []SQLHistoryItem
+	Active    bool `bson:"active"`
+	Completed bool `bson:"completed"`
 
-	PuzzleCheckpoints map[string]int
+	PuzzleCompletedEventSent bool `bson:"puzzle_completed_event_sent,omitempty"`
+	CaseCompletedEventSent   bool `bson:"case_completed_event_sent,omitempty"`
 
-	Active    bool
-	Completed bool
-
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
 }
 
 type SQLHistoryItem struct {

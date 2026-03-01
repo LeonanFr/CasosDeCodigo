@@ -377,6 +377,10 @@ func (p *GameProcessor) serializeRows(rows *sql.Rows) models.QueryResult {
 	}
 }
 
+func (p *GameProcessor) GetCurrentState(caso *models.Case, prog *models.Progression) models.GameState {
+	return p.getCurrentState(caso, prog)
+}
+
 func (p *GameProcessor) getCurrentState(caso *models.Case, prog *models.Progression) models.GameState {
 	state := models.GameState{
 		CaseID:        prog.CaseID,
