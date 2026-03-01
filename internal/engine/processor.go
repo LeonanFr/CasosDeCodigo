@@ -3,9 +3,10 @@ package engine
 import (
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/models"
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
@@ -227,19 +228,21 @@ func (p *GameProcessor) executeSQL(
 	caso *models.Case,
 	progression *models.Progression,
 	query string,
-) (resp *models.GameResponse, historyItem *models.SQLHistoryItem, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("Panic no executeSQL: %v", r)
-			err = nil
-			resp = &models.GameResponse{
+) (*models.GameResponse, *models.SQLHistoryItem, error) {
+
+	parts := strings.Split(query, ";")
+	for i, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return &models.GameResponse{
 				Success: false,
-				Error:   "Erro interno no processamento da consulta",
+				Error:   fmt.Sprintf("Erro: comando vazio detectado após ';' (posição %d). Remova ';' extras.", i+1),
 				State:   p.getCurrentState(caso, progression),
-			}
-			historyItem = nil
+			}, nil, nil
 		}
-	}()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	dbInstance, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
 	if err != nil {
@@ -247,7 +250,7 @@ func (p *GameProcessor) executeSQL(
 	}
 	defer dbInstance.Close()
 
-	_, _ = dbInstance.Exec(`PRAGMA case_sensitive_like = OFF`)
+	_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
 
 	normalizedQuery := NormalizeSQL(query)
 
@@ -255,10 +258,18 @@ func (p *GameProcessor) executeSQL(
 	isSelect := strings.HasPrefix(upper, "SELECT")
 
 	var data interface{}
+	var historyItem *models.SQLHistoryItem
 
 	if isSelect {
-		rows, err := dbInstance.Query(normalizedQuery)
+		rows, err := dbInstance.QueryContext(ctx, normalizedQuery)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return &models.GameResponse{
+					Success: false,
+					Error:   "A consulta excedeu o tempo limite",
+					State:   p.getCurrentState(caso, progression),
+				}, nil, nil
+			}
 			return &models.GameResponse{
 				Success: false,
 				Error:   err.Error(),
@@ -268,8 +279,15 @@ func (p *GameProcessor) executeSQL(
 		defer rows.Close()
 		data = p.serializeRows(rows)
 	} else {
-		_, err = dbInstance.Exec(normalizedQuery)
+		_, err = dbInstance.ExecContext(ctx, normalizedQuery)
 		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return &models.GameResponse{
+					Success: false,
+					Error:   "O comando excedeu o tempo limite",
+					State:   p.getCurrentState(caso, progression),
+				}, nil, nil
+			}
 			return &models.GameResponse{
 				Success: false,
 				Error:   err.Error(),
