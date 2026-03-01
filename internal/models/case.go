@@ -19,6 +19,7 @@ type Case struct {
 	FocusRequirements []FocusRequirement `bson:"focus_requirements" json:"focus_requirements"`
 	SQLFunctions      []SQLFunction      `bson:"sql_functions" json:"sql_functions"`
 	HelpTexts         []HelpText         `bson:"help_texts" json:"help_texts"`
+	TournamentID      string             `bson:"tournament_id,omitempty" json:"tournament_id,omitempty"`
 }
 
 type CaseSummary struct {

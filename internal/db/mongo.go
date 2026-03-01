@@ -263,6 +263,22 @@ func (m *MongoManager) GetTournamentProgressions(teamCode string) ([]models.Prog
 	return progressions, nil
 }
 
+func (m *MongoManager) GetActiveTournament() (*models.Tournament, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var t models.Tournament
+	err := m.TournamentsColl.FindOne(ctx, bson.M{"active": true}).Decode(&t)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &t, nil
+}
+
 func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

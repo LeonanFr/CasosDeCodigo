@@ -21,28 +21,30 @@ func NewCaseHandler(mongo *db.MongoManager) *CaseHandler {
 }
 
 func (h *CaseHandler) GetAllCases(w http.ResponseWriter, r *http.Request) {
-	cases, err := h.MongoManager.GetAllCases()
+	allCases, err := h.MongoManager.GetAllCases()
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar casos"}`, http.StatusInternalServerError)
 		return
 	}
 
-	summaries := make([]models.CaseSummary, 0)
-	for _, c := range cases {
-		summaries = append(summaries, models.CaseSummary{
-			ID:          c.ID,
-			Title:       c.Title,
-			Description: c.Description,
-			Difficulty:  c.Difficulty,
-		})
+	cases := make([]models.CaseSummary, 0)
+	for _, c := range allCases {
+		if c.TournamentID == "" {
+			cases = append(cases, models.CaseSummary{
+				ID:          c.ID,
+				Title:       c.Title,
+				Description: c.Description,
+				Difficulty:  c.Difficulty,
+			})
+		}
 	}
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(struct {
+		_ = json.NewEncoder(w).Encode(struct {
 			Cases []models.CaseSummary `json:"cases"`
-		}{Cases: summaries})
+		}{Cases: cases})
 		return
 	}
 
@@ -55,12 +57,12 @@ func (h *CaseHandler) GetAllCases(w http.ResponseWriter, r *http.Request) {
 		Cases        []models.CaseSummary `json:"cases"`
 		Progressions []models.Progression `json:"progressions,omitempty"`
 	}{
-		Cases:        summaries,
+		Cases:        cases,
 		Progressions: progressions,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
@@ -75,14 +77,15 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok {
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(models.InitializeResponse{
+		_ = json.NewEncoder(w).Encode(models.InitializeResponse{
 			Case: caso,
 		})
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(userID, caseID)
+	progression, err := h.MongoManager.GetProgression(caseID, &userID, nil)
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
@@ -94,7 +97,7 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +119,7 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(userID, req.CaseID)
+	progression, err := h.MongoManager.GetProgression(req.CaseID, &userID, nil)
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
@@ -124,11 +127,12 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 
 	if progression == nil {
 		progression = &models.Progression{
-			UserID:        userID,
+			UserID:        &userID,
 			CaseID:        req.CaseID,
 			CurrentPuzzle: caso.Config.StartingPuzzle,
 			CurrentFocus:  "none",
 			SQLHistory:    []models.SQLHistoryItem{},
+			Active:        true,
 		}
 
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
@@ -143,5 +147,5 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
