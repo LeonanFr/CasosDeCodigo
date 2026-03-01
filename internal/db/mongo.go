@@ -367,3 +367,15 @@ func (m *MongoManager) SaveTelemetry(event *models.TelemetryEvent) error {
 	_, err := m.TelemetryColl.InsertOne(ctx, event)
 	return err
 }
+
+func (m *MongoManager) FindUserByID(id primitive.ObjectID) (*models.User, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := m.UsersColl.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
