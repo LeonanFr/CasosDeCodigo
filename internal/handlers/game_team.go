@@ -11,14 +11,8 @@ type TeamValidateRequest struct {
 }
 
 func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
-	var req TeamValidateRequest
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"payload inválido"}`, http.StatusBadRequest)
-		return
-	}
-
-	if req.Code == "" {
+	code := r.URL.Query().Get("code")
+	if code == "" {
 		http.Error(w, `{"error":"código obrigatório"}`, http.StatusBadRequest)
 		return
 	}
@@ -29,19 +23,22 @@ func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamResp, err := integration.FetchTeam(tournament.CodeRoute, req.Code)
+	route := tournament.APIConfig.TeamValidateRoute
+	if route == "" {
+		http.Error(w, `{"error":"rota de validação indisponível"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	teamResp, err := integration.FetchTeam(route, code)
 	if err != nil {
 		http.Error(w, `{"error":"falha ao validar time"}`, http.StatusBadGateway)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"valid":     teamResp.Exists,
-		"team_code": req.Code,
+		"team_code": code,
 		"members":   teamResp.Integrates,
 	})
-	if err != nil {
-		return
-	}
 }
