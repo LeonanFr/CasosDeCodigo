@@ -70,6 +70,11 @@ func main() {
 	router.Handle("/api/game/execute", auth.Middleware(http.HandlerFunc(gameHandler.ExecuteCommand))).Methods("POST")
 	router.Handle("/api/game/progress", auth.Middleware(http.HandlerFunc(gameHandler.GetProgress))).Methods("GET")
 
+	router.Handle(
+		"/api/game/team/validate",
+		auth.Middleware(http.HandlerFunc(gameHandler.ValidateTeam)),
+	).Methods("POST")
+	
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},

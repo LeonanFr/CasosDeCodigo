@@ -3,6 +3,7 @@ package db
 import (
 	"casos-de-codigo-api/internal/models"
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -19,6 +20,7 @@ type MongoManager struct {
 	CasesColl       *mongo.Collection
 	ProgressionColl *mongo.Collection
 	TelemetryColl   *mongo.Collection
+	TournamentsColl *mongo.Collection
 }
 
 func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
@@ -44,6 +46,7 @@ func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
 		CasesColl:       db.Collection("cases"),
 		ProgressionColl: db.Collection("progression"),
 		TelemetryColl:   db.Collection("telemetry"),
+		TournamentsColl: db.Collection("tournaments"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -94,6 +97,16 @@ func (m *MongoManager) createIndexes() error {
 				{Key: "result.status", Value: 1},
 			},
 		},
+	}
+
+	tournamentIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "active", Value: 1}},
+		},
+	}
+
+	if _, err := m.TournamentsColl.Indexes().CreateMany(ctx, tournamentIndexes); err != nil {
+		return err
 	}
 
 	if _, err := m.UsersColl.Indexes().CreateMany(ctx, userIndexes); err != nil {
@@ -184,7 +197,12 @@ func (m *MongoManager) GetAllCases() ([]models.Case, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+
+		}
+	}(cursor, ctx)
 
 	err = cursor.All(ctx, &cases)
 	return cases, err
@@ -293,8 +311,30 @@ func (m *MongoManager) GetUserProgressions(userID primitive.ObjectID) ([]models.
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(ctx)
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+
+		}
+	}(cursor, ctx)
 
 	err = cursor.All(ctx, &progressions)
 	return progressions, err
+}
+
+func (m *MongoManager) GetActiveTournament() (*models.Tournament, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var tournament models.Tournament
+	err := m.TournamentsColl.FindOne(ctx, bson.M{"active": true}).Decode(&tournament)
+
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &tournament, nil
 }
