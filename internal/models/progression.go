@@ -7,27 +7,27 @@ import (
 )
 
 type Progression struct {
-	ID primitive.ObjectID `bson:"_id,omitempty"`
+	ID primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 
-	UserID    *primitive.ObjectID `bson:"user_id,omitempty"`
-	TeamCode  *string             `bson:"team_code,omitempty"`
-	Matricula string              `bson:"matricula,omitempty"`
+	UserID    *primitive.ObjectID `bson:"user_id,omitempty" json:"user_id,omitempty"`
+	TeamCode  *string             `bson:"team_code,omitempty" json:"team_code,omitempty"`
+	Matricula string              `bson:"matricula,omitempty" json:"matricula,omitempty"`
 
-	CaseID string `bson:"case_id"`
+	CaseID string `bson:"case_id" json:"case_id"`
 
-	CurrentPuzzle     int              `bson:"current_puzzle"`
-	CurrentFocus      string           `bson:"current_focus"`
-	SQLHistory        []SQLHistoryItem `bson:"sql_history"`
-	PuzzleCheckpoints map[string]int   `bson:"puzzle_checkpoints"`
+	CurrentPuzzle     int              `bson:"current_puzzle" json:"current_puzzle"`
+	CurrentFocus      string           `bson:"current_focus" json:"current_focus"`
+	SQLHistory        []SQLHistoryItem `bson:"sql_history" json:"sql_history"`
+	PuzzleCheckpoints map[string]int   `bson:"puzzle_checkpoints" json:"puzzle_checkpoints"`
 
-	Active    bool `bson:"active"`
-	Completed bool `bson:"completed"`
+	Active    bool `bson:"active" json:"active"`
+	Completed bool `bson:"completed" json:"completed"`
 
-	PuzzleCompletedEventSent bool `bson:"puzzle_completed_event_sent,omitempty"`
-	CaseCompletedEventSent   bool `bson:"case_completed_event_sent,omitempty"`
+	PuzzleCompletedEventSent bool `bson:"puzzle_completed_event_sent,omitempty" json:"puzzle_completed_event_sent,omitempty"`
+	CaseCompletedEventSent   bool `bson:"case_completed_event_sent,omitempty" json:"case_completed_event_sent,omitempty"`
 
-	CreatedAt time.Time `bson:"created_at"`
-	UpdatedAt time.Time `bson:"updated_at"`
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
 
 type SQLHistoryItem struct {
