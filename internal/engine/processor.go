@@ -5,6 +5,7 @@ import (
 	"casos-de-codigo-api/internal/models"
 	"database/sql"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -226,7 +227,19 @@ func (p *GameProcessor) executeSQL(
 	caso *models.Case,
 	progression *models.Progression,
 	query string,
-) (*models.GameResponse, *models.SQLHistoryItem, error) {
+) (resp *models.GameResponse, historyItem *models.SQLHistoryItem, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic no executeSQL: %v", r)
+			err = nil
+			resp = &models.GameResponse{
+				Success: false,
+				Error:   "Erro interno no processamento da consulta",
+				State:   p.getCurrentState(caso, progression),
+			}
+			historyItem = nil
+		}
+	}()
 
 	dbInstance, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
 	if err != nil {
@@ -242,7 +255,6 @@ func (p *GameProcessor) executeSQL(
 	isSelect := strings.HasPrefix(upper, "SELECT")
 
 	var data interface{}
-	var historyItem *models.SQLHistoryItem
 
 	if isSelect {
 		rows, err := dbInstance.Query(normalizedQuery)
