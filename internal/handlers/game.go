@@ -28,7 +28,6 @@ func NewGameHandler(mongo *db.MongoManager, factory *db.SQLiteFactory) *GameHand
 		GameProcessor: engine.NewGameProcessor(factory),
 	}
 }
-
 func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, _ := auth.GetUserIDFromContext(ctx)
@@ -87,6 +86,34 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"Erro ao criar progresso"}`, http.StatusInternalServerError)
 			return
 		}
+	}
+
+	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
+	if cleanSQL == "RESET" {
+		err = h.MongoManager.ResetProgression(
+			req.CaseID,
+			userPtr,
+			teamPtr,
+			matriculaPtr,
+			caso.Config.StartingPuzzle,
+		)
+		if err != nil {
+			http.Error(w, `{"error":"Erro ao resetar progresso"}`, http.StatusInternalServerError)
+			return
+		}
+		response := models.GameResponse{
+			Success:   true,
+			IsReset:   true,
+			Narrative: "Progresso resetado.",
+			State: models.GameState{
+				CaseID:        req.CaseID,
+				CurrentPuzzle: caso.Config.StartingPuzzle,
+				CurrentFocus:  "none",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
 	}
 
 	if isTournament && !progression.Active {
