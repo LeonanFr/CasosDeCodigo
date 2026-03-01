@@ -14,13 +14,14 @@ import (
 )
 
 type MongoManager struct {
-	Client          *mongo.Client
-	Database        *mongo.Database
-	UsersColl       *mongo.Collection
-	CasesColl       *mongo.Collection
-	ProgressionColl *mongo.Collection
-	TelemetryColl   *mongo.Collection
-	TournamentsColl *mongo.Collection
+	Client                    *mongo.Client
+	Database                  *mongo.Database
+	UsersColl                 *mongo.Collection
+	CasesColl                 *mongo.Collection
+	ProgressionColl           *mongo.Collection
+	TelemetryColl             *mongo.Collection
+	TournamentsColl           *mongo.Collection
+	TournamentProgressionColl *mongo.Collection
 }
 
 func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
@@ -40,13 +41,14 @@ func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
 	db := client.Database(dbName)
 
 	manager := &MongoManager{
-		Client:          client,
-		Database:        db,
-		UsersColl:       db.Collection("users"),
-		CasesColl:       db.Collection("cases"),
-		ProgressionColl: db.Collection("progression"),
-		TelemetryColl:   db.Collection("telemetry"),
-		TournamentsColl: db.Collection("tournaments"),
+		Client:                    client,
+		Database:                  db,
+		UsersColl:                 db.Collection("users"),
+		CasesColl:                 db.Collection("cases"),
+		ProgressionColl:           db.Collection("progression"),
+		TelemetryColl:             db.Collection("telemetry"),
+		TournamentsColl:           db.Collection("tournaments"),
+		TournamentProgressionColl: db.Collection("tournament_progressions"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -103,6 +105,20 @@ func (m *MongoManager) createIndexes() error {
 		{
 			Keys: bson.D{{Key: "active", Value: 1}},
 		},
+	}
+
+	tournamentProgressionIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "team_code", Value: 1},
+				{Key: "case_id", Value: 1},
+			},
+			Options: options.Index().SetUnique(true),
+		},
+	}
+
+	if _, err := m.TournamentProgressionColl.Indexes().CreateMany(ctx, tournamentProgressionIndexes); err != nil {
+		return err
 	}
 
 	if _, err := m.TournamentsColl.Indexes().CreateMany(ctx, tournamentIndexes); err != nil {
@@ -337,4 +353,86 @@ func (m *MongoManager) GetActiveTournament() (*models.Tournament, error) {
 	}
 
 	return &tournament, nil
+}
+
+func (m *MongoManager) GetTournamentProgression(
+	teamCode string,
+	caseID string,
+) (*models.TournamentProgression, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var progression models.TournamentProgression
+
+	err := m.TournamentProgressionColl.FindOne(ctx, bson.M{
+		"team_code": teamCode,
+		"case_id":   caseID,
+	}).Decode(&progression)
+
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &progression, nil
+}
+
+func (m *MongoManager) UpsertTournamentProgression(
+	p *models.TournamentProgression,
+) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	now := time.Now()
+	p.UpdatedAt = now
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = now
+	}
+
+	filter := bson.M{
+		"team_code": p.TeamCode,
+		"case_id":   p.CaseID,
+	}
+
+	var existing models.TournamentProgression
+	err := m.TournamentProgressionColl.FindOne(ctx, filter).Decode(&existing)
+
+	if err == nil && existing.Completed {
+		p.Completed = true
+	}
+
+	opts := options.Replace().SetUpsert(true)
+
+	_, err = m.TournamentProgressionColl.ReplaceOne(ctx, filter, p, opts)
+	return err
+}
+
+func (m *MongoManager) SetTournamentProgressionActive(
+	teamCode string,
+	caseID string,
+	active bool,
+) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := m.TournamentProgressionColl.UpdateOne(
+		ctx,
+		bson.M{
+			"team_code": teamCode,
+			"case_id":   caseID,
+		},
+		bson.M{
+			"$set": bson.M{
+				"active":     active,
+				"updated_at": time.Now(),
+			},
+		},
+	)
+
+	return err
 }

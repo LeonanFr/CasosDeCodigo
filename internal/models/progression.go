@@ -21,6 +21,23 @@ type Progression struct {
 	Completed bool      `bson:"completed" json:"completed"`
 }
 
+type TournamentProgression struct {
+	ID primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+
+	TeamCode string `bson:"team_code" json:"team_code"`
+	CaseID   string `bson:"case_id" json:"case_id"`
+
+	CurrentPuzzle int              `bson:"current_puzzle" json:"current_puzzle"`
+	CurrentFocus  string           `bson:"current_focus" json:"current_focus"`
+	SQLHistory    []SQLHistoryItem `bson:"sql_history,omitempty"`
+
+	Active    bool `bson:"active" json:"active"`
+	Completed bool `bson:"completed"`
+
+	CreatedAt time.Time `bson:"created_at"`
+	UpdatedAt time.Time `bson:"updated_at"`
+}
+
 type SQLHistoryItem struct {
 	Timestamp   time.Time `bson:"timestamp" json:"timestamp"`
 	Query       string    `bson:"query" json:"query"`
