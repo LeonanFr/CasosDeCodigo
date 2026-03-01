@@ -78,7 +78,6 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := auth.GetUserIDFromContext(r.Context())
 	if !ok {
-
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(models.InitializeResponse{
 			Case: caso,
@@ -86,7 +85,7 @@ func (h *CaseHandler) GetCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(caseID, &userID, nil)
+	progression, err := h.MongoManager.GetProgression(caseID, &userID, nil, nil)
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
