@@ -7,35 +7,25 @@ import (
 )
 
 type Progression struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID        primitive.ObjectID `bson:"user_id" json:"user_id"`
-	CaseID        string             `bson:"case_id" json:"case_id"`
-	CurrentPuzzle int                `bson:"current_puzzle" json:"current_puzzle"`
-	CurrentFocus  string             `bson:"current_focus" json:"current_focus"`
-	SQLHistory    []SQLHistoryItem   `bson:"sql_history" json:"sql_history"`
+	ID primitive.ObjectID `bson:"_id,omitempty"`
 
-	PuzzleCheckpoints map[string]int `bson:"puzzle_checkpoints,omitempty" json:"puzzle_checkpoints,omitempty"`
+	UserID   *primitive.ObjectID `bson:"user_id,omitempty"`
+	TeamCode *string             `bson:"team_code,omitempty"`
 
-	CreatedAt time.Time `bson:"created_at" json:"created_at"`
-	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
-	Completed bool      `bson:"completed" json:"completed"`
-}
+	CaseID string `bson:"case_id"`
 
-type TournamentProgression struct {
-	ID primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	CurrentPuzzle int
+	CurrentFocus  string
 
-	TeamCode string `bson:"team_code" json:"team_code"`
-	CaseID   string `bson:"case_id" json:"case_id"`
+	SQLHistory []SQLHistoryItem
 
-	CurrentPuzzle int              `bson:"current_puzzle" json:"current_puzzle"`
-	CurrentFocus  string           `bson:"current_focus" json:"current_focus"`
-	SQLHistory    []SQLHistoryItem `bson:"sql_history,omitempty"`
+	PuzzleCheckpoints map[string]int
 
-	Active    bool `bson:"active" json:"active"`
-	Completed bool `bson:"completed"`
+	Active    bool
+	Completed bool
 
-	CreatedAt time.Time `bson:"created_at"`
-	UpdatedAt time.Time `bson:"updated_at"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type SQLHistoryItem struct {

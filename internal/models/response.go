@@ -19,8 +19,9 @@ type QueryResult struct {
 }
 
 type ExecuteRequest struct {
-	CaseID string `json:"case_id" validate:"required"`
-	SQL    string `json:"sql" validate:"required"`
+	CaseID   string  `json:"case_id" validate:"required"`
+	SQL      string  `json:"sql" validate:"required"`
+	TeamCode *string `json:"team_code,omitempty"`
 }
 
 type InitializeRequest struct {

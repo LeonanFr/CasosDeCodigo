@@ -14,22 +14,20 @@ import (
 )
 
 type MongoManager struct {
-	Client                    *mongo.Client
-	Database                  *mongo.Database
-	UsersColl                 *mongo.Collection
-	CasesColl                 *mongo.Collection
-	ProgressionColl           *mongo.Collection
-	TelemetryColl             *mongo.Collection
-	TournamentsColl           *mongo.Collection
-	TournamentProgressionColl *mongo.Collection
+	Client          *mongo.Client
+	Database        *mongo.Database
+	UsersColl       *mongo.Collection
+	CasesColl       *mongo.Collection
+	ProgressionColl *mongo.Collection
+	TelemetryColl   *mongo.Collection
+	TournamentsColl *mongo.Collection
 }
 
-func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
+func NewMongoManager(uri, dbName string) (*MongoManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	clientOptions := options.Client().ApplyURI(uri)
-	client, err := mongo.Connect(ctx, clientOptions)
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, err
 	}
@@ -41,14 +39,13 @@ func NewMongoManager(uri string, dbName string) (*MongoManager, error) {
 	db := client.Database(dbName)
 
 	manager := &MongoManager{
-		Client:                    client,
-		Database:                  db,
-		UsersColl:                 db.Collection("users"),
-		CasesColl:                 db.Collection("cases"),
-		ProgressionColl:           db.Collection("progression"),
-		TelemetryColl:             db.Collection("telemetry"),
-		TournamentsColl:           db.Collection("tournaments"),
-		TournamentProgressionColl: db.Collection("tournament_progressions"),
+		Client:          client,
+		Database:        db,
+		UsersColl:       db.Collection("users"),
+		CasesColl:       db.Collection("cases"),
+		ProgressionColl: db.Collection("progression"),
+		TelemetryColl:   db.Collection("telemetry"),
+		TournamentsColl: db.Collection("tournaments"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -62,11 +59,12 @@ func (m *MongoManager) createIndexes() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	userIndexes := []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "username", Value: 1}},
-			Options: options.Index().SetUnique(true),
-		},
+	_, err := m.UsersColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		return err
 	}
 
 	progressionIndexes := []mongo.IndexModel{
@@ -75,62 +73,36 @@ func (m *MongoManager) createIndexes() error {
 				{Key: "user_id", Value: 1},
 				{Key: "case_id", Value: 1},
 			},
-			Options: options.Index().SetUnique(true),
+			Options: options.Index().
+				SetUnique(true).
+				SetPartialFilterExpression(bson.M{
+					"user_id": bson.M{"$exists": true},
+				}),
 		},
-	}
-
-	telemetryIndexes := []mongo.IndexModel{
-		{
-			Keys: bson.D{
-				{Key: "user_id", Value: 1},
-				{Key: "case_id", Value: 1},
-				{Key: "timestamp", Value: 1},
-			},
-		},
-		{
-			Keys: bson.D{
-				{Key: "case_id", Value: 1},
-				{Key: "puzzle_id", Value: 1},
-			},
-		},
-		{
-			Keys: bson.D{
-				{Key: "input_type", Value: 1},
-				{Key: "result.status", Value: 1},
-			},
-		},
-	}
-
-	tournamentIndexes := []mongo.IndexModel{
-		{
-			Keys: bson.D{{Key: "active", Value: 1}},
-		},
-	}
-
-	tournamentProgressionIndexes := []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "team_code", Value: 1},
 				{Key: "case_id", Value: 1},
 			},
-			Options: options.Index().SetUnique(true),
+			Options: options.Index().
+				SetUnique(true).
+				SetPartialFilterExpression(bson.M{
+					"team_code": bson.M{"$exists": true},
+				}),
 		},
-	}
-
-	if _, err := m.TournamentProgressionColl.Indexes().CreateMany(ctx, tournamentProgressionIndexes); err != nil {
-		return err
-	}
-
-	if _, err := m.TournamentsColl.Indexes().CreateMany(ctx, tournamentIndexes); err != nil {
-		return err
-	}
-
-	if _, err := m.UsersColl.Indexes().CreateMany(ctx, userIndexes); err != nil {
-		return err
 	}
 
 	if _, err := m.ProgressionColl.Indexes().CreateMany(ctx, progressionIndexes); err != nil {
 		return err
+	}
+
+	telemetryIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "case_id", Value: 1},
+				{Key: "timestamp", Value: 1},
+			},
+		},
 	}
 
 	if _, err := m.TelemetryColl.Indexes().CreateMany(ctx, telemetryIndexes); err != nil {
@@ -150,16 +122,17 @@ func (m *MongoManager) CreateUser(user *models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	user.CreatedAt = time.Now()
-	user.UpdatedAt = time.Now()
+	now := time.Now()
+	user.CreatedAt = now
+	user.UpdatedAt = now
 
-	result, err := m.UsersColl.InsertOne(ctx, user)
+	res, err := m.UsersColl.InsertOne(ctx, user)
 	if err != nil {
 		return err
 	}
 
-	if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
-		user.ID = oid
+	if id, ok := res.InsertedID.(primitive.ObjectID); ok {
+		user.ID = id
 	}
 
 	return nil
@@ -177,39 +150,29 @@ func (m *MongoManager) FindUserByUsername(username string) (*models.User, error)
 	return &user, nil
 }
 
-func (m *MongoManager) FindUserByID(id primitive.ObjectID) (*models.User, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var user models.User
-	err := m.UsersColl.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
 func (m *MongoManager) GetCase(caseID string) (*models.Case, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var caso models.Case
-	err := m.CasesColl.FindOne(ctx, bson.M{"_id": caseID}).Decode(&caso)
+	var c models.Case
+	err := m.CasesColl.FindOne(ctx, bson.M{"_id": caseID}).Decode(&c)
 	if err != nil {
 		return nil, err
 	}
-	return &caso, nil
+	return &c, nil
 }
 
 func (m *MongoManager) GetAllCases() ([]models.Case, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cases := make([]models.Case, 0)
+	var cases []models.Case
 
-	findOptions := options.Find().SetSort(bson.D{{Key: "order", Value: 1}})
-
-	cursor, err := m.CasesColl.Find(ctx, bson.M{}, findOptions)
+	cursor, err := m.CasesColl.Find(
+		ctx,
+		bson.M{},
+		options.Find().SetSort(bson.D{{Key: "order", Value: 1}}),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -224,67 +187,156 @@ func (m *MongoManager) GetAllCases() ([]models.Case, error) {
 	return cases, err
 }
 
-func (m *MongoManager) GetProgression(userID primitive.ObjectID, caseID string) (*models.Progression, error) {
+func (m *MongoManager) GetProgression(
+	caseID string,
+	userID *primitive.ObjectID,
+	teamCode *string,
+) (*models.Progression, error) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var progression models.Progression
-	err := m.ProgressionColl.FindOne(ctx, bson.M{
-		"user_id": userID,
-		"case_id": caseID,
-	}).Decode(&progression)
+	filter := bson.M{"case_id": caseID}
 
-	if err == mongo.ErrNoDocuments {
+	if userID != nil {
+		filter["user_id"] = *userID
+	}
+
+	if teamCode != nil {
+		filter["team_code"] = *teamCode
+	}
+
+	var p models.Progression
+	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&p)
+
+	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return &progression, nil
+	return &p, nil
+}
+
+func (m *MongoManager) GetUserProgressions(userID primitive.ObjectID) ([]models.Progression, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := m.ProgressionColl.Find(ctx, bson.M{"user_id": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+		}
+	}(cursor, ctx)
+
+	var progressions []models.Progression
+	if err := cursor.All(ctx, &progressions); err != nil {
+		return nil, err
+	}
+
+	return progressions, nil
+}
+
+func (m *MongoManager) GetTournamentProgressions(teamCode string) ([]models.Progression, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := m.ProgressionColl.Find(ctx, bson.M{"team_code": teamCode})
+	if err != nil {
+		return nil, err
+	}
+	defer func(cursor *mongo.Cursor, ctx context.Context) {
+		err := cursor.Close(ctx)
+		if err != nil {
+		}
+	}(cursor, ctx)
+
+	var progressions []models.Progression
+	if err := cursor.All(ctx, &progressions); err != nil {
+		return nil, err
+	}
+
+	return progressions, nil
 }
 
 func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	p.UpdatedAt = time.Now()
+	now := time.Now()
+	p.UpdatedAt = now
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = p.UpdatedAt
+		p.CreatedAt = now
 	}
 
-	filter := bson.M{"user_id": p.UserID, "case_id": p.CaseID}
+	filter := bson.M{
+		"case_id": p.CaseID,
+	}
+
+	if p.UserID != nil {
+		filter["user_id"] = *p.UserID
+	}
+
+	if p.TeamCode != nil {
+		filter["team_code"] = *p.TeamCode
+	}
 
 	var existing models.Progression
 	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&existing)
-
 	if err == nil && existing.Completed {
 		p.Completed = true
 	}
 
-	opts := options.Replace().SetUpsert(true)
+	_, err = m.ProgressionColl.ReplaceOne(
+		ctx,
+		filter,
+		p,
+		options.Replace().SetUpsert(true),
+	)
 
-	_, err = m.ProgressionColl.ReplaceOne(ctx, filter, p, opts)
 	return err
 }
 
-func (m *MongoManager) ResetProgression(userID primitive.ObjectID, caseID string, startingPuzzle int) error {
+func (m *MongoManager) ResetProgression(
+	caseID string,
+	userID *primitive.ObjectID,
+	teamCode *string,
+	startingPuzzle int,
+) error {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	filter := bson.M{"case_id": caseID}
+
+	if userID != nil {
+		filter["user_id"] = *userID
+	}
+
+	if teamCode != nil {
+		filter["team_code"] = *teamCode
+	}
+
 	_, err := m.ProgressionColl.UpdateOne(
 		ctx,
-		bson.M{"user_id": userID, "case_id": caseID},
+		filter,
 		bson.M{
 			"$set": bson.M{
 				"current_puzzle":     startingPuzzle,
 				"current_focus":      "none",
 				"sql_history":        []models.SQLHistoryItem{},
 				"puzzle_checkpoints": bson.M{},
+				"active":             true,
+				"completed":          false,
 				"updated_at":         time.Now(),
 			},
 		},
 	)
+
 	return err
 }
 
@@ -297,142 +349,5 @@ func (m *MongoManager) SaveTelemetry(event *models.TelemetryEvent) error {
 	}
 
 	_, err := m.TelemetryColl.InsertOne(ctx, event)
-	return err
-}
-
-func (m *MongoManager) AddSQLHistory(userID primitive.ObjectID, caseID string, item models.SQLHistoryItem) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := m.ProgressionColl.UpdateOne(
-		ctx,
-		bson.M{
-			"user_id": userID,
-			"case_id": caseID,
-		},
-		bson.M{
-			"$push": bson.M{"sql_history": item},
-			"$set":  bson.M{"updated_at": time.Now()},
-		},
-	)
-	return err
-}
-
-func (m *MongoManager) GetUserProgressions(userID primitive.ObjectID) ([]models.Progression, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	progressions := make([]models.Progression, 0)
-	cursor, err := m.ProgressionColl.Find(ctx, bson.M{"user_id": userID})
-	if err != nil {
-		return nil, err
-	}
-	defer func(cursor *mongo.Cursor, ctx context.Context) {
-		err := cursor.Close(ctx)
-		if err != nil {
-
-		}
-	}(cursor, ctx)
-
-	err = cursor.All(ctx, &progressions)
-	return progressions, err
-}
-
-func (m *MongoManager) GetActiveTournament() (*models.Tournament, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var tournament models.Tournament
-	err := m.TournamentsColl.FindOne(ctx, bson.M{"active": true}).Decode(&tournament)
-
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &tournament, nil
-}
-
-func (m *MongoManager) GetTournamentProgression(
-	teamCode string,
-	caseID string,
-) (*models.TournamentProgression, error) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var progression models.TournamentProgression
-
-	err := m.TournamentProgressionColl.FindOne(ctx, bson.M{
-		"team_code": teamCode,
-		"case_id":   caseID,
-	}).Decode(&progression)
-
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &progression, nil
-}
-
-func (m *MongoManager) UpsertTournamentProgression(
-	p *models.TournamentProgression,
-) error {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	now := time.Now()
-	p.UpdatedAt = now
-	if p.CreatedAt.IsZero() {
-		p.CreatedAt = now
-	}
-
-	filter := bson.M{
-		"team_code": p.TeamCode,
-		"case_id":   p.CaseID,
-	}
-
-	var existing models.TournamentProgression
-	err := m.TournamentProgressionColl.FindOne(ctx, filter).Decode(&existing)
-
-	if err == nil && existing.Completed {
-		p.Completed = true
-	}
-
-	opts := options.Replace().SetUpsert(true)
-
-	_, err = m.TournamentProgressionColl.ReplaceOne(ctx, filter, p, opts)
-	return err
-}
-
-func (m *MongoManager) SetTournamentProgressionActive(
-	teamCode string,
-	caseID string,
-	active bool,
-) error {
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := m.TournamentProgressionColl.UpdateOne(
-		ctx,
-		bson.M{
-			"team_code": teamCode,
-			"case_id":   caseID,
-		},
-		bson.M{
-			"$set": bson.M{
-				"active":     active,
-				"updated_at": time.Now(),
-			},
-		},
-	)
-
 	return err
 }
