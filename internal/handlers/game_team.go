@@ -2,16 +2,53 @@ package handlers
 
 import (
 	"casos-de-codigo-api/internal/integration"
-	"casos-de-codigo-api/internal/models"
+	"casos-de-codigo-api/internal/sse"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-type TeamValidateRequest struct {
-	Code string `json:"code"`
+func (h *GameHandler) SubscribeTeamEvents(w http.ResponseWriter, r *http.Request) {
+	teamCode := r.URL.Query().Get("team_code")
+	if teamCode == "" {
+		http.Error(w, "team_code obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE não suportado", http.StatusInternalServerError)
+		return
+	}
+
+	eventChan := sse.Subscribe(teamCode)
+	defer sse.Unsubscribe(teamCode)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case event := <-eventChan:
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "event: case-status\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
@@ -39,18 +76,22 @@ func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var cases []models.CaseSummary
+	var cases []map[string]interface{}
 	if len(tournament.CaseIDs) > 0 {
 		allCases, err := h.MongoManager.GetAllCases()
 		if err == nil {
-			for _, c := range allCases {
-				for _, id := range tournament.CaseIDs {
+			for _, id := range tournament.CaseIDs {
+				for _, c := range allCases {
 					if c.ID == id {
-						cases = append(cases, models.CaseSummary{
-							ID:          c.ID,
-							Title:       c.Title,
-							Description: c.Description,
-							Difficulty:  c.Difficulty,
+						filter := bson.M{"team_code": code, "case_id": id}
+						count, _ := h.MongoManager.ProgressionColl.CountDocuments(context.Background(), filter)
+						occupied := count > 0
+						cases = append(cases, map[string]interface{}{
+							"id":          c.ID,
+							"title":       c.Title,
+							"description": c.Description,
+							"difficulty":  c.Difficulty,
+							"occupied":    occupied,
 						})
 						break
 					}
@@ -60,10 +101,11 @@ func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	json.NewEncoder(w).Encode(map[string]any{
 		"valid":     teamResp.Exists,
 		"team_code": code,
 		"members":   teamResp.Integrates,
+		"cases":     cases,
 	})
 }
 
@@ -101,4 +143,36 @@ func (h *GameHandler) TournamentStatus(w http.ResponseWriter, r *http.Request) {
 		"ready": allStarted,
 		"cases": casesStatus,
 	})
+}
+
+func (h *GameHandler) LeaveCase(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CaseID    string `json:"case_id"`
+		TeamCode  string `json:"team_code"`
+		Matricula string `json:"matricula"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"Requisição inválida"}`, http.StatusBadRequest)
+		return
+	}
+
+	progression, err := h.MongoManager.GetProgression(req.CaseID, nil, &req.TeamCode, &req.Matricula)
+	if err != nil || progression == nil {
+		http.Error(w, `{"error":"Progressão não encontrada"}`, http.StatusNotFound)
+		return
+	}
+
+	progression.Active = false
+	if err := h.MongoManager.UpsertProgression(progression); err != nil {
+		http.Error(w, `{"error":"Erro ao atualizar"}`, http.StatusInternalServerError)
+		return
+	}
+
+	filter := bson.M{"team_code": req.TeamCode, "case_id": req.CaseID}
+	count, _ := h.MongoManager.ProgressionColl.CountDocuments(context.Background(), filter)
+	if count == 0 {
+		sse.NotifyFree(req.TeamCode, req.CaseID)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

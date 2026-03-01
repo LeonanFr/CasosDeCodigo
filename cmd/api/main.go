@@ -68,6 +68,8 @@ func main() {
 	).Methods("POST")
 
 	router.Handle("/api/game/tournament/status", auth.Middleware(http.HandlerFunc(gameHandler.TournamentStatus))).Methods("GET")
+	router.Handle("/api/game/leave", auth.Middleware(http.HandlerFunc(gameHandler.LeaveCase))).Methods("POST")
+	router.Handle("/api/game/tournament/subscribe", auth.Middleware(http.HandlerFunc(gameHandler.SubscribeTeamEvents))).Methods("GET")
 
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},

@@ -11,7 +11,7 @@ type Progression struct {
 
 	UserID    *primitive.ObjectID `bson:"user_id,omitempty"`
 	TeamCode  *string             `bson:"team_code,omitempty"`
-	Matricula string              `bson:"matricula,omitempty"` // <-- novo
+	Matricula string              `bson:"matricula,omitempty"`
 
 	CaseID string `bson:"case_id"`
 

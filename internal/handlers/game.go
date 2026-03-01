@@ -89,7 +89,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !progression.Active {
+	if isTournament && !progression.Active {
 		http.Error(w, `{"error":"Seu acesso foi bloqueado pelo administrador."}`, http.StatusForbidden)
 		return
 	}

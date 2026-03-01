@@ -4,10 +4,12 @@ import (
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/models"
+	"casos-de-codigo-api/internal/sse"
 	"encoding/json"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -140,6 +142,18 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if progression == nil {
+		if req.TeamCode != nil && *req.TeamCode != "" {
+			filter := bson.M{"team_code": *req.TeamCode, "case_id": req.CaseID}
+			count, err := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), filter)
+			if err != nil {
+				http.Error(w, `{"error": "Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
+				return
+			}
+			if count > 0 {
+				http.Error(w, `{"error": "Esta linha narrativa já foi escolhida por outro membro do time."}`, http.StatusConflict)
+				return
+			}
+		}
 		progression = &models.Progression{
 			UserID:        userPtr,
 			TeamCode:      teamPtr,
@@ -151,10 +165,24 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 			Active:        true,
 			Completed:     false,
 		}
-
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
 			http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
 			return
+		}
+		if req.TeamCode != nil && *req.TeamCode != "" {
+			sse.NotifyOccupied(*req.TeamCode, req.CaseID)
+		}
+	} else {
+		if req.TeamCode != nil && *req.TeamCode != "" {
+			if progression.Active {
+				http.Error(w, `{"error": "Esta conta já está em uso em outro dispositivo."}`, http.StatusConflict)
+				return
+			}
+			progression.Active = true
+			if err := h.MongoManager.UpsertProgression(progression); err != nil {
+				http.Error(w, `{"error": "Erro ao reativar progresso"}`, http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 
