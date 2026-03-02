@@ -65,7 +65,7 @@ func main() {
 	router.Handle(
 		"/api/game/team/validate",
 		auth.Middleware(http.HandlerFunc(gameHandler.ValidateTeam)),
-	).Methods("POST")
+	).Methods("GET")
 
 	router.Handle("/api/game/tournament/status", auth.Middleware(http.HandlerFunc(gameHandler.TournamentStatus))).Methods("GET")
 	router.Handle("/api/game/leave", auth.Middleware(http.HandlerFunc(gameHandler.LeaveCase))).Methods("POST")
