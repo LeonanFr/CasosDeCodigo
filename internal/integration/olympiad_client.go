@@ -20,7 +20,7 @@ type TeamMember struct {
 
 func FetchTeam(codeRoute string, code string) (*TeamResponse, error) {
 	client := http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 60 * time.Second,
 	}
 
 	url := fmt.Sprintf("%s/%s", codeRoute, code)
