@@ -213,3 +213,29 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(response)
 }
+
+func (h *GameHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error":"Não autorizado"}`, http.StatusUnauthorized)
+		return
+	}
+
+	teamCode := r.URL.Query().Get("team_code")
+	var progressions []models.Progression
+	var err error
+
+	if teamCode != "" {
+		progressions, err = h.MongoManager.GetTournamentProgressions(teamCode)
+	} else {
+		progressions, err = h.MongoManager.GetUserProgressions(userID)
+	}
+
+	if err != nil {
+		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(progressions)
+}
