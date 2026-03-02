@@ -28,9 +28,11 @@ func NewGameHandler(mongo *db.MongoManager, factory *db.SQLiteFactory) *GameHand
 		GameProcessor: engine.NewGameProcessor(factory),
 	}
 }
+
 func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, _ := auth.GetUserIDFromContext(ctx)
+	sessionID, _ := auth.GetSessionIDFromContext(ctx)
 
 	var req models.ExecuteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -40,6 +42,8 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	var userPtr *primitive.ObjectID
 	var teamPtr *string
+	var matriculaPtr *string
+	var sessionPtr *primitive.ObjectID
 	isTournament := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
@@ -48,6 +52,8 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		teamPtr = req.TeamCode
+		matriculaPtr = &req.Matricula
+		sessionPtr = &sessionID
 		isTournament = true
 	} else {
 		userPtr = &userID
@@ -59,12 +65,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var matriculaPtr *string
-	if isTournament {
-		matriculaPtr = &req.Matricula
-	}
-
-	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
+	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr, sessionPtr)
 	if err != nil {
 		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
@@ -75,6 +76,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			UserID:        userPtr,
 			TeamCode:      teamPtr,
 			Matricula:     req.Matricula,
+			SessionID:     sessionID,
 			CaseID:        req.CaseID,
 			CurrentPuzzle: caso.Config.StartingPuzzle,
 			CurrentFocus:  "none",
@@ -85,6 +87,17 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
 			http.Error(w, `{"error":"Erro ao criar progresso"}`, http.StatusInternalServerError)
 			return
+		}
+	} else {
+		if isTournament {
+			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
+				http.Error(w, `{"error":"Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
+				return
+			}
+			if !progression.Active {
+				http.Error(w, `{"error":"Seu acesso foi bloqueado pelo administrador."}`, http.StatusForbidden)
+				return
+			}
 		}
 	}
 
@@ -113,11 +126,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	if isTournament && !progression.Active {
-		http.Error(w, `{"error":"Seu acesso foi bloqueado pelo administrador."}`, http.StatusForbidden)
 		return
 	}
 
@@ -204,30 +212,4 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}
 	json.NewEncoder(w).Encode(response)
-}
-
-func (h *GameHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, `{"error":"Não autorizado"}`, http.StatusUnauthorized)
-		return
-	}
-
-	teamCode := r.URL.Query().Get("team_code")
-	var progressions []models.Progression
-	var err error
-
-	if teamCode != "" {
-		progressions, err = h.MongoManager.GetTournamentProgressions(teamCode)
-	} else {
-		progressions, err = h.MongoManager.GetUserProgressions(userID)
-	}
-
-	if err != nil {
-		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(progressions)
 }

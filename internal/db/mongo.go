@@ -194,6 +194,7 @@ func (m *MongoManager) GetProgression(
 	userID *primitive.ObjectID,
 	teamCode *string,
 	matricula *string,
+	sessionID *primitive.ObjectID,
 ) (*models.Progression, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -208,6 +209,9 @@ func (m *MongoManager) GetProgression(
 	}
 	if matricula != nil && *matricula != "" {
 		filter["matricula"] = *matricula
+	}
+	if sessionID != nil {
+		filter["session_id"] = *sessionID
 	}
 
 	var p models.Progression
@@ -301,6 +305,9 @@ func (m *MongoManager) UpsertProgression(p *models.Progression) error {
 	if p.Matricula != "" {
 		filter["matricula"] = p.Matricula
 	}
+	if p.SessionID != primitive.NilObjectID {
+		filter["session_id"] = p.SessionID
+	}
 
 	var existing models.Progression
 	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&existing)
@@ -349,7 +356,6 @@ func (m *MongoManager) ResetProgression(
 			},
 		},
 	)
-
 	return err
 }
 
@@ -375,4 +381,11 @@ func (m *MongoManager) FindUserByID(id primitive.ObjectID) (*models.User, error)
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (m *MongoManager) CountActiveProgressionsByMatricula(teamCode, matricula string) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	filter := bson.M{"team_code": teamCode, "matricula": matricula, "active": true}
+	return m.ProgressionColl.CountDocuments(ctx, filter)
 }

@@ -9,11 +9,25 @@ import (
 
 type contextKey string
 
-const userContextKey = contextKey("user")
-const isGuestKey = contextKey("isGuest")
+const (
+	userContextKey    = contextKey("user")
+	sessionContextKey = contextKey("session")
+)
 
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sessionHeader := r.Header.Get("X-Session-ID")
+		var sessionID primitive.ObjectID
+		var err error
+		if sessionHeader != "" && sessionHeader != "null" && sessionHeader != "undefined" {
+			sessionID, err = primitive.ObjectIDFromHex(sessionHeader)
+		}
+		if err != nil || sessionHeader == "" {
+			sessionID = primitive.NewObjectID()
+		}
+		w.Header().Set("X-Session-ID", sessionID.Hex())
+		ctx := context.WithValue(r.Context(), sessionContextKey, sessionID)
+
 		authHeader := r.Header.Get("Authorization")
 		guestHeader := r.Header.Get("X-Guest-ID")
 
@@ -22,33 +36,24 @@ func Middleware(next http.Handler) http.Handler {
 			if err == nil {
 				userID, err := primitive.ObjectIDFromHex(claims.UserID)
 				if err == nil {
-					ctx := context.WithValue(r.Context(), userContextKey, userID)
-					ctx = context.WithValue(ctx, isGuestKey, false)
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
+					ctx = context.WithValue(ctx, userContextKey, userID)
 				}
 			}
-		}
-
-		var guestID primitive.ObjectID
-		var exists bool
-
-		if guestHeader != "" && guestHeader != "null" && guestHeader != "undefined" {
-			id, err := primitive.ObjectIDFromHex(guestHeader)
+		} else if guestHeader != "" && guestHeader != "null" && guestHeader != "undefined" {
+			guestID, err := primitive.ObjectIDFromHex(guestHeader)
 			if err == nil {
-				guestID = id
-				exists = true
+				ctx = context.WithValue(ctx, userContextKey, guestID)
+			} else {
+				guestID = primitive.NewObjectID()
+				w.Header().Set("X-Guest-ID", guestID.Hex())
+				ctx = context.WithValue(ctx, userContextKey, guestID)
 			}
+		} else {
+			guestID := primitive.NewObjectID()
+			w.Header().Set("X-Guest-ID", guestID.Hex())
+			ctx = context.WithValue(ctx, userContextKey, guestID)
 		}
 
-		if !exists {
-			guestID = primitive.NewObjectID()
-		}
-
-		w.Header().Set("X-Guest-ID", guestID.Hex())
-
-		ctx := context.WithValue(r.Context(), userContextKey, guestID)
-		ctx = context.WithValue(ctx, isGuestKey, true)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -58,7 +63,7 @@ func GetUserIDFromContext(ctx context.Context) (primitive.ObjectID, bool) {
 	return userID, ok
 }
 
-func IsGuest(ctx context.Context) bool {
-	guest, ok := ctx.Value(isGuestKey).(bool)
-	return ok && guest
+func GetSessionIDFromContext(ctx context.Context) (primitive.ObjectID, bool) {
+	sessionID, ok := ctx.Value(sessionContextKey).(primitive.ObjectID)
+	return sessionID, ok
 }

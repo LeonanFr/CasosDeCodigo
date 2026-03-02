@@ -12,6 +12,7 @@ type Progression struct {
 	UserID    *primitive.ObjectID `bson:"user_id,omitempty" json:"user_id,omitempty"`
 	TeamCode  *string             `bson:"team_code,omitempty" json:"team_code,omitempty"`
 	Matricula string              `bson:"matricula,omitempty" json:"matricula,omitempty"`
+	SessionID primitive.ObjectID  `bson:"session_id,omitempty" json:"session_id,omitempty"`
 
 	CaseID string `bson:"case_id" json:"case_id"`
 
