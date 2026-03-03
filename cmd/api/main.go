@@ -78,8 +78,8 @@ func main() {
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Guest-ID"},
-		ExposedHeaders:   []string{"X-Guest-ID"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Guest-ID", "X-Session-ID"},
+		ExposedHeaders:   []string{"X-Guest-ID", "X-Session-ID"},
 		AllowCredentials: true,
 		Debug:            false,
 	})
