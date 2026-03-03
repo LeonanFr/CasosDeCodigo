@@ -14,13 +14,14 @@ import (
 )
 
 type MongoManager struct {
-	Client          *mongo.Client
-	Database        *mongo.Database
-	UsersColl       *mongo.Collection
-	CasesColl       *mongo.Collection
-	ProgressionColl *mongo.Collection
-	TelemetryColl   *mongo.Collection
-	TournamentsColl *mongo.Collection
+	Client             *mongo.Client
+	Database           *mongo.Database
+	UsersColl          *mongo.Collection
+	CasesColl          *mongo.Collection
+	ProgressionColl    *mongo.Collection
+	TelemetryColl      *mongo.Collection
+	TournamentsColl    *mongo.Collection
+	MemberSessionsColl *mongo.Collection
 }
 
 func NewMongoManager(uri, dbName string) (*MongoManager, error) {
@@ -39,13 +40,14 @@ func NewMongoManager(uri, dbName string) (*MongoManager, error) {
 	db := client.Database(dbName)
 
 	manager := &MongoManager{
-		Client:          client,
-		Database:        db,
-		UsersColl:       db.Collection("users"),
-		CasesColl:       db.Collection("cases"),
-		ProgressionColl: db.Collection("progression"),
-		TelemetryColl:   db.Collection("telemetry"),
-		TournamentsColl: db.Collection("tournaments"),
+		Client:             client,
+		Database:           db,
+		UsersColl:          db.Collection("users"),
+		CasesColl:          db.Collection("cases"),
+		ProgressionColl:    db.Collection("progression"),
+		TelemetryColl:      db.Collection("telemetry"),
+		TournamentsColl:    db.Collection("tournaments"),
+		MemberSessionsColl: db.Collection("member_sessions"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -108,6 +110,24 @@ func (m *MongoManager) createIndexes() error {
 	}
 
 	if _, err := m.TelemetryColl.Indexes().CreateMany(ctx, telemetryIndexes); err != nil {
+		return err
+	}
+
+	memberSessionIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "team_code", Value: 1},
+				{Key: "matricula", Value: 1},
+			},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "session_id", Value: 1},
+			},
+		},
+	}
+	if _, err := m.MemberSessionsColl.Indexes().CreateMany(ctx, memberSessionIndexes); err != nil {
 		return err
 	}
 
@@ -388,4 +408,86 @@ func (m *MongoManager) CountActiveProgressionsByMatricula(teamCode, matricula st
 	defer cancel()
 	filter := bson.M{"team_code": teamCode, "matricula": matricula, "active": true}
 	return m.ProgressionColl.CountDocuments(ctx, filter)
+}
+
+func (m *MongoManager) ReserveMember(teamCode, matricula string, sessionID primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"team_code": teamCode,
+		"matricula": matricula,
+		"active":    true,
+	}
+	var existing models.MemberSession
+	err := m.MemberSessionsColl.FindOne(ctx, filter).Decode(&existing)
+	if err == nil {
+		if existing.SessionID != sessionID {
+			return errors.New("matrícula já está em uso por outra sessão")
+		}
+		return nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
+
+	reserva := &models.MemberSession{
+		TeamCode:  teamCode,
+		Matricula: matricula,
+		SessionID: sessionID,
+		Active:    true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_, err = m.MemberSessionsColl.InsertOne(ctx, reserva)
+	return err
+}
+
+func (m *MongoManager) ReleaseMember(teamCode, matricula string, sessionID primitive.ObjectID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"team_code":  teamCode,
+		"matricula":  matricula,
+		"session_id": sessionID,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"active":     false,
+			"updated_at": time.Now(),
+		},
+	}
+	_, err := m.MemberSessionsColl.UpdateOne(ctx, filter, update)
+	return err
+}
+
+func (m *MongoManager) GetMemberSessionBySessionID(teamCode string, sessionID primitive.ObjectID) (*models.MemberSession, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"team_code":  teamCode,
+		"session_id": sessionID,
+		"active":     true,
+	}
+	var ms models.MemberSession
+	err := m.MemberSessionsColl.FindOne(ctx, filter).Decode(&ms)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return &ms, err
+}
+
+func (m *MongoManager) IsMatriculaOccupied(teamCode, matricula string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"team_code": teamCode,
+		"matricula": matricula,
+		"active":    true,
+	}
+	count, err := m.MemberSessionsColl.CountDocuments(ctx, filter)
+	return count > 0, err
 }

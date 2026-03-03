@@ -138,7 +138,18 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Busca progressão existente para esta sessão (ou combinação de identificadores)
+	if teamPtr != nil {
+		ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
+		if err != nil {
+			http.Error(w, `{"error": "Erro ao verificar reserva de matrícula"}`, http.StatusInternalServerError)
+			return
+		}
+		if ms == nil || ms.Matricula != req.Matricula {
+			http.Error(w, `{"error": "Matrícula não reservada para esta sessão"}`, http.StatusForbidden)
+			return
+		}
+	}
+
 	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr, sessionPtr)
 	if err != nil {
 		http.Error(w, `{"error": "Erro ao buscar progresso"}`, http.StatusInternalServerError)
@@ -146,29 +157,22 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if progression != nil {
-		// Já existe progressão para esta sessão
 		if teamPtr != nil {
-			// Verifica se a sessão corresponde (segurança extra)
 			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
 				http.Error(w, `{"error": "Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
 				return
 			}
-			// Se estiver inativa, reativa
 			if !progression.Active {
 				progression.Active = true
-				progression.SessionID = sessionID // atualiza sessão (opcional)
+				progression.SessionID = sessionID
 				if err := h.MongoManager.UpsertProgression(progression); err != nil {
 					http.Error(w, `{"error": "Erro ao reativar progresso"}`, http.StatusInternalServerError)
 					return
 				}
 			}
-			// Se já estiver ativa, segue normalmente (não precisa fazer nada)
 		}
-		// Para single player, não há verificação extra
 	} else {
-		// Não existe progressão: verificar disponibilidade e criar
 		if teamPtr != nil {
-			// Verificar se a matrícula já está em uso em outro caso (excluindo a sessão atual, que não existe)
 			count, err := h.MongoManager.CountActiveProgressionsByMatricula(*teamPtr, req.Matricula)
 			if err != nil {
 				http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
@@ -179,7 +183,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Verificar se o caso já foi ocupado por outro membro do time
 			filter := bson.M{"team_code": *teamPtr, "case_id": req.CaseID}
 			count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), filter)
 			if err != nil {
@@ -191,7 +194,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Criar nova progressão para torneio
 			progression = &models.Progression{
 				UserID:        userPtr,
 				TeamCode:      teamPtr,
@@ -210,7 +212,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 			}
 			sse.NotifyOccupied(*teamPtr, req.CaseID)
 		} else {
-			// Single player
 			progression = &models.Progression{
 				UserID:        userPtr,
 				CaseID:        req.CaseID,
