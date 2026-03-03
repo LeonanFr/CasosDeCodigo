@@ -414,15 +414,33 @@ func (m *MongoManager) ReserveMember(teamCode, matricula string, sessionID primi
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	filter := bson.M{
+	filterSession := bson.M{
+		"team_code":  teamCode,
+		"session_id": sessionID,
+		"active":     true,
+	}
+	var existingSession models.MemberSession
+	err := m.MemberSessionsColl.FindOne(ctx, filterSession).Decode(&existingSession)
+	if err == nil {
+
+		if existingSession.Matricula == matricula {
+			return nil
+		}
+		return errors.New("esta sessão já possui uma matrícula reservada")
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
+
+	filterMatricula := bson.M{
 		"team_code": teamCode,
 		"matricula": matricula,
 		"active":    true,
 	}
-	var existing models.MemberSession
-	err := m.MemberSessionsColl.FindOne(ctx, filter).Decode(&existing)
+	var existingMatricula models.MemberSession
+	err = m.MemberSessionsColl.FindOne(ctx, filterMatricula).Decode(&existingMatricula)
 	if err == nil {
-		if existing.SessionID != sessionID {
+		if existingMatricula.SessionID != sessionID {
 			return errors.New("matrícula já está em uso por outra sessão")
 		}
 		return nil
