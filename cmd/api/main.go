@@ -69,13 +69,12 @@ func main() {
 
 	router.Handle("/api/game/tournament/status", auth.Middleware(http.HandlerFunc(gameHandler.TournamentStatus))).Methods("GET")
 	router.Handle("/api/game/leave", auth.Middleware(http.HandlerFunc(gameHandler.LeaveCase))).Methods("POST")
-	router.Handle("/api/game/tournament/subscribe", auth.Middleware(http.HandlerFunc(gameHandler.SubscribeTeamEvents))).Methods("GET")
+	router.Handle("/api/game/team/ws", auth.Middleware(http.HandlerFunc(gameHandler.TeamWebSocket)))
 
 	router.Handle("/api/tournament/reserve", auth.Middleware(http.HandlerFunc(gameHandler.ReserveMember))).Methods("POST")
 	router.Handle("/api/tournament/release", auth.Middleware(http.HandlerFunc(gameHandler.ReleaseMember))).Methods("POST")
 	router.Handle("/api/tournament/my-matricula", auth.Middleware(http.HandlerFunc(gameHandler.GetMyMatricula))).Methods("GET")
-	router.Handle("/api/tournament/subscribe-members", auth.Middleware(http.HandlerFunc(gameHandler.SubscribeMemberEvents))).Methods("GET")
-	
+
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
