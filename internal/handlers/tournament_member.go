@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"casos-de-codigo-api/internal/auth"
+	"casos-de-codigo-api/internal/sse"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 )
 
 type ReserveMemberRequest struct {
@@ -34,6 +37,8 @@ func (h *GameHandler) ReserveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sse.NotifyMemberOccupied(req.TeamCode, req.Matricula)
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -50,6 +55,7 @@ func (h *GameHandler) ReleaseMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"Erro ao liberar matrícula"}`, http.StatusInternalServerError)
 		return
 	}
+	sse.NotifyMemberFree(req.TeamCode, req.Matricula)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -73,4 +79,43 @@ func (h *GameHandler) GetMyMatricula(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"matricula": ms.Matricula,
 	})
+}
+
+func (h *GameHandler) SubscribeMemberEvents(w http.ResponseWriter, r *http.Request) {
+	teamCode := r.URL.Query().Get("team_code")
+	if teamCode == "" {
+		http.Error(w, "team_code obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE não suportado", http.StatusInternalServerError)
+		return
+	}
+
+	eventChan := sse.SubscribeMember(teamCode)
+	defer sse.UnsubscribeMember(teamCode)
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case event := <-eventChan:
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "event: member-status\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
