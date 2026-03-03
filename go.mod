@@ -6,6 +6,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.19
 	github.com/rs/cors v1.11.1
 	go.mongodb.org/mongo-driver v1.13.0

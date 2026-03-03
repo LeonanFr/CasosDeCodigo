@@ -4,7 +4,7 @@ import (
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/models"
-	"casos-de-codigo-api/internal/sse"
+	"casos-de-codigo-api/internal/ws"
 	"encoding/json"
 	"net/http"
 
@@ -210,7 +210,9 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
 				return
 			}
-			sse.NotifyOccupied(*teamPtr, req.CaseID)
+			event := map[string]string{"case_id": req.CaseID, "status": "occupied"}
+			data, _ := json.Marshal(event)
+			ws.BroadcastToTeam(*teamPtr, data)
 		} else {
 			progression = &models.Progression{
 				UserID:        userPtr,

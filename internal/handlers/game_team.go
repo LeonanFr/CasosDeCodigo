@@ -2,54 +2,13 @@ package handlers
 
 import (
 	"casos-de-codigo-api/internal/integration"
-	"casos-de-codigo-api/internal/sse"
+	"casos-de-codigo-api/internal/ws"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
-
-func (h *GameHandler) SubscribeTeamEvents(w http.ResponseWriter, r *http.Request) {
-	teamCode := r.URL.Query().Get("team_code")
-	if teamCode == "" {
-		http.Error(w, "team_code obrigatório", http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "SSE não suportado", http.StatusInternalServerError)
-		return
-	}
-
-	eventChan := sse.Subscribe(teamCode)
-	defer sse.Unsubscribe(teamCode)
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case event := <-eventChan:
-			data, _ := json.Marshal(event)
-			fmt.Fprintf(w, "event: case-status\ndata: %s\n\n", data)
-			flusher.Flush()
-		case <-ticker.C:
-			fmt.Fprintf(w, ": keepalive\n\n")
-			flusher.Flush()
-		case <-r.Context().Done():
-			return
-		}
-	}
-}
 
 func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
@@ -171,7 +130,9 @@ func (h *GameHandler) LeaveCase(w http.ResponseWriter, r *http.Request) {
 	filter := bson.M{"team_code": req.TeamCode, "case_id": req.CaseID}
 	count, _ := h.MongoManager.ProgressionColl.CountDocuments(context.Background(), filter)
 	if count == 0 {
-		sse.NotifyFree(req.TeamCode, req.CaseID)
+		event := map[string]string{"case_id": req.CaseID, "status": "free"}
+		data, _ := json.Marshal(event)
+		ws.BroadcastToTeam(req.TeamCode, data)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
