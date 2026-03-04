@@ -160,7 +160,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oldPuzzle := progression.CurrentPuzzle
 	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
 	if err != nil {
 		http.Error(w, `{"error":"Erro interno"}`, http.StatusInternalServerError)
@@ -168,6 +167,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if response.Success {
+		oldPuzzle := progression.CurrentPuzzle
 		progression.CurrentPuzzle = response.State.CurrentPuzzle
 		progression.CurrentFocus = response.State.CurrentFocus
 
@@ -176,9 +176,15 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if isTournament && tournament != nil {
-			if oldPuzzle < response.State.CurrentPuzzle && !progression.PuzzleCompletedEventSent {
-				_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
-				progression.PuzzleCompletedEventSent = true
+			if progression.PuzzlesEventSent == nil {
+				progression.PuzzlesEventSent = make(map[int]bool)
+			}
+
+			for p := oldPuzzle; p < progression.CurrentPuzzle; p++ {
+				if !progression.PuzzlesEventSent[p] {
+					_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
+					progression.PuzzlesEventSent[p] = true
+				}
 			}
 
 			if progression.Completed && !progression.CaseCompletedEventSent {
