@@ -501,6 +501,19 @@ func (m *MongoManager) ReleaseMember(teamCode, matricula string, sessionID primi
 	return err
 }
 
+func (m *MongoManager) GetActiveReservations(teamCode string) ([]models.MemberSession, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	filter := bson.M{"team_code": teamCode, "active": true}
+	cursor, err := m.MemberSessionsColl.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	var reservas []models.MemberSession
+	err = cursor.All(ctx, &reservas)
+	return reservas, err
+}
+
 func (m *MongoManager) GetMemberSessionBySessionID(teamCode string, sessionID primitive.ObjectID) (*models.MemberSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

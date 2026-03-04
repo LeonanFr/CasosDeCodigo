@@ -35,7 +35,7 @@ func (h *GameHandler) ReserveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event := map[string]string{"matricula": req.Matricula, "status": "occupied"}
+	event := map[string]string{"matricula": req.Matricula, "status": "occupied", "sessionId": sessionID.Hex()}
 	data, _ := json.Marshal(event)
 	ws.BroadcastToTeam(req.TeamCode, data)
 

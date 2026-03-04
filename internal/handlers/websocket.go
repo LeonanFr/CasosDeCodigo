@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"casos-de-codigo-api/internal/ws"
+	"encoding/json"
 	"log"
 	"net/http"
 
@@ -28,6 +29,21 @@ func (h *GameHandler) TeamWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := ws.RegisterClient(teamCode, conn)
 	defer ws.UnregisterClient(client)
+
+	reservas, err := h.MongoManager.GetActiveReservations(teamCode)
+	if err != nil {
+		log.Printf("Erro ao buscar reservas ativas: %v", err)
+	} else {
+		for _, r := range reservas {
+			event := map[string]string{
+				"matricula": r.Matricula,
+				"status":    "occupied",
+				"sessionId": r.SessionID.Hex(),
+			}
+			data, _ := json.Marshal(event)
+			client.Send <- data
+		}
+	}
 
 	go func() {
 		for {
