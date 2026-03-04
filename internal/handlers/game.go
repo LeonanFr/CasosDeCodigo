@@ -28,7 +28,6 @@ func NewGameHandler(mongo *db.MongoManager, factory *db.SQLiteFactory) *GameHand
 		GameProcessor: engine.NewGameProcessor(factory),
 	}
 }
-
 func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, _ := auth.GetUserIDFromContext(ctx)
@@ -160,34 +159,30 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
+	outcome, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
 	if err != nil {
 		http.Error(w, `{"error":"Erro interno"}`, http.StatusInternalServerError)
 		return
 	}
 
-	if response.Success {
-		oldPuzzle := progression.CurrentPuzzle
-		progression.CurrentPuzzle = response.State.CurrentPuzzle
-		progression.CurrentFocus = response.State.CurrentFocus
+	response := outcome.Response
+	historyItem := outcome.HistoryItem
 
-		if progression.CurrentPuzzle >= len(caso.Puzzles) {
-			progression.Completed = true
-		}
+	if response.Success {
 
 		if isTournament && tournament != nil {
 			if progression.PuzzlesEventSent == nil {
 				progression.PuzzlesEventSent = make(map[int]bool)
 			}
 
-			for p := oldPuzzle; p < progression.CurrentPuzzle; p++ {
+			for p := outcome.OldPuzzle; p < outcome.NewPuzzle; p++ {
 				if !progression.PuzzlesEventSent[p] {
 					_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
 					progression.PuzzlesEventSent[p] = true
 				}
 			}
 
-			if progression.Completed && !progression.CaseCompletedEventSent {
+			if outcome.CaseCompleted && !progression.CaseCompletedEventSent {
 				_ = integration.SendCaseEvent(tournament, *teamPtr)
 				progression.CaseCompletedEventSent = true
 			}

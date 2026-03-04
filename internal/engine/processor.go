@@ -24,28 +24,54 @@ func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 	}
 }
 
-func (p *GameProcessor) ProcessCommand(caso *models.Case, progression *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
-	p.ensurePuzzleCheckpoint(progression, progression.CurrentPuzzle, len(progression.SQLHistory))
+func (p *GameProcessor) executeInternal(caso *models.Case, prog *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
+	p.ensurePuzzleCheckpoint(prog, prog.CurrentPuzzle, len(prog.SQLHistory))
 
 	upperCommand := strings.ToUpper(strings.TrimSpace(command))
 
-	if response := p.handleGameCommand(caso, progression, upperCommand); response != nil {
+	if response := p.handleGameCommand(caso, prog, upperCommand); response != nil {
 		return response, nil, nil
 	}
 
-	if err := p.Validator.ValidateSQLCommand(caso, progression, command); err != nil {
-		if apiErr, ok := err.(models.APIError); ok {
+	if err := p.Validator.ValidateSQLCommand(caso, prog, command); err != nil {
+		var apiErr models.APIError
+		if errors.As(err, &apiErr) {
 			return &models.GameResponse{
 				Success: false,
 				Error:   apiErr.Message,
-				State:   p.getCurrentState(caso, progression),
+				State:   p.getCurrentState(caso, prog),
 			}, nil, nil
 		}
 		return nil, nil, err
 	}
 
-	return p.executeSQL(caso, progression, command)
+	return p.executeSQL(caso, prog, command)
 }
+
+func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progression, command string) (*models.CommandOutcome, error) {
+	oldPuzzle := prog.CurrentPuzzle
+
+	response, historyItem, err := p.executeInternal(caso, prog, command)
+	if err != nil {
+		return nil, err
+	}
+
+	caseCompleted := prog.CurrentPuzzle >= len(caso.Puzzles)
+	if caseCompleted {
+		prog.Completed = true
+	}
+
+	outcome := &models.CommandOutcome{
+		Response:      response,
+		HistoryItem:   historyItem,
+		OldPuzzle:     oldPuzzle,
+		NewPuzzle:     prog.CurrentPuzzle,
+		CaseCompleted: caseCompleted,
+	}
+
+	return outcome, nil
+}
+
 func (p *GameProcessor) handleLookList(
 	caso *models.Case,
 	prog *models.Progression,
