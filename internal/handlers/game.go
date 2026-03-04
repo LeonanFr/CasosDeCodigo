@@ -176,27 +176,30 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			progression.Completed = true
 		}
 
-		if isTournament && tournament != nil {
-			log.Printf("Tournament encontrado: %+v", tournament)
-			log.Printf("Rotas: puzzle=%s, case=%s", tournament.APIConfig.PuzzleEventRoute, tournament.APIConfig.CaseEventRoute)
+		log.Printf("DEBUG: oldPuzzle=%d, newPuzzle=%d, completed=%v, puzzleEventSent=%v, caseEventSent=%v",
+			oldPuzzle, progression.CurrentPuzzle, progression.Completed,
+			progression.PuzzleCompletedEventSent, progression.CaseCompletedEventSent)
 
+		if isTournament && tournament != nil {
 			if oldPuzzle < progression.CurrentPuzzle && !progression.PuzzleCompletedEventSent {
-				log.Printf("Enviando puzzle event para team %s, matricula %s", *teamPtr, req.Matricula)
+				log.Printf("DEBUG: Enviando puzzle event para team %s, matricula %s", *teamPtr, req.Matricula)
 				err := integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
 				if err != nil {
-					log.Printf("Erro ao enviar puzzle event: %v", err)
+					log.Printf("ERRO ao enviar puzzle event: %v", err)
 				} else {
 					progression.PuzzleCompletedEventSent = true
+					log.Printf("DEBUG: Puzzle event enviado com sucesso")
 				}
 			}
 
 			if progression.Completed && !progression.CaseCompletedEventSent {
-				log.Printf("Enviando case event para team %s", *teamPtr)
+				log.Printf("DEBUG: Enviando case event para team %s", *teamPtr)
 				err := integration.SendCaseEvent(tournament, *teamPtr)
 				if err != nil {
-					log.Printf("Erro ao enviar case event: %v", err)
+					log.Printf("ERRO ao enviar case event: %v", err)
 				} else {
 					progression.CaseCompletedEventSent = true
+					log.Printf("DEBUG: Case event enviado com sucesso")
 				}
 			}
 		}
