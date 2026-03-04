@@ -514,6 +514,13 @@ func (m *MongoManager) GetActiveReservations(teamCode string) ([]models.MemberSe
 	return reservas, err
 }
 
+func (m *MongoManager) CountAllProgressionsByMatricula(teamCode, matricula string) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	filter := bson.M{"team_code": teamCode, "matricula": matricula}
+	return m.ProgressionColl.CountDocuments(ctx, filter)
+}
+
 func (m *MongoManager) GetMemberSessionBySessionID(teamCode string, sessionID primitive.ObjectID) (*models.MemberSession, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

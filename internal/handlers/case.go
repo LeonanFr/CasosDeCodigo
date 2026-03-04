@@ -174,13 +174,13 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if teamPtr != nil {
-			count, err := h.MongoManager.CountActiveProgressionsByMatricula(*teamPtr, req.Matricula)
+			count, err := h.MongoManager.CountAllProgressionsByMatricula(*teamPtr, req.Matricula)
 			if err != nil {
 				http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
 				return
 			}
 			if count > 0 {
-				http.Error(w, `{"error": "Esta matrícula já está em uso em outro caso."}`, http.StatusConflict)
+				http.Error(w, `{"error": "Esta matrícula já está vinculada a outro caso."}`, http.StatusConflict)
 				return
 			}
 
