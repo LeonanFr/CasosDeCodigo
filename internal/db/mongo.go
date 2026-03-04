@@ -561,3 +561,25 @@ func (m *MongoManager) IsMatriculaOccupied(teamCode, matricula string) (bool, er
 	count, err := m.MemberSessionsColl.CountDocuments(ctx, filter)
 	return count > 0, err
 }
+
+func (m *MongoManager) HasTeamCompletedAllTournamentCases(
+	teamCode string,
+	caseIDs []string,
+) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{
+		"team_code": teamCode,
+		"case_id":   bson.M{"$in": caseIDs},
+		"completed": true,
+		"active":    true,
+	}
+
+	count, err := m.ProgressionColl.CountDocuments(ctx, filter)
+	if err != nil {
+		return false, err
+	}
+
+	return int(count) == len(caseIDs), nil
+}

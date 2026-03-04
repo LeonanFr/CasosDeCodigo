@@ -28,6 +28,7 @@ func NewGameHandler(mongo *db.MongoManager, factory *db.SQLiteFactory) *GameHand
 		GameProcessor: engine.NewGameProcessor(factory),
 	}
 }
+
 func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, _ := auth.GetUserIDFromContext(ctx)
@@ -169,7 +170,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	historyItem := outcome.HistoryItem
 
 	if response.Success {
-
 		if isTournament && tournament != nil {
 			if progression.PuzzlesEventSent == nil {
 				progression.PuzzlesEventSent = make(map[int]bool)
@@ -182,9 +182,24 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			if outcome.CaseCompleted && !progression.CaseCompletedEventSent {
-				_ = integration.SendCaseEvent(tournament, *teamPtr)
-				progression.CaseCompletedEventSent = true
+			if outcome.CaseCompleted {
+				caseBelongs := false
+				for _, id := range tournament.CaseIDs {
+					if id == caso.ID {
+						caseBelongs = true
+						break
+					}
+				}
+				if caseBelongs {
+					allCompleted, err := h.MongoManager.HasTeamCompletedAllTournamentCases(*teamPtr, tournament.CaseIDs)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					if allCompleted {
+						_ = integration.SendCaseEvent(tournament, *teamPtr)
+					}
+				}
 			}
 		}
 
