@@ -116,7 +116,7 @@ func (h *GameHandler) LeaveCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(req.CaseID, nil, &req.TeamCode, &req.Matricula, nil)
+	progression, err := h.MongoManager.GetProgression(req.CaseID, nil, &req.TeamCode, &req.Matricula)
 	if err != nil || progression == nil {
 		http.Error(w, `{"error":"Progressão não encontrada"}`, http.StatusNotFound)
 		return

@@ -214,7 +214,6 @@ func (m *MongoManager) GetProgression(
 	userID *primitive.ObjectID,
 	teamCode *string,
 	matricula *string,
-	sessionID *primitive.ObjectID,
 ) (*models.Progression, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -229,9 +228,6 @@ func (m *MongoManager) GetProgression(
 	}
 	if matricula != nil && *matricula != "" {
 		filter["matricula"] = *matricula
-	}
-	if sessionID != nil {
-		filter["session_id"] = *sessionID
 	}
 
 	var p models.Progression

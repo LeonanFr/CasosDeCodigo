@@ -65,7 +65,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr, sessionPtr)
+	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
 	if err != nil {
 		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
 		return
