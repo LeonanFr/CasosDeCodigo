@@ -7,7 +7,6 @@ import (
 	"casos-de-codigo-api/internal/integration"
 	"casos-de-codigo-api/internal/models"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -176,29 +175,15 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			progression.Completed = true
 		}
 
-		if oldPuzzle < progression.CurrentPuzzle {
-			log.Printf("INFO: Puzzle avançou: %d -> %d (team=%s, matricula=%s)", oldPuzzle, progression.CurrentPuzzle, *teamPtr, req.Matricula)
-		}
-
 		if isTournament && tournament != nil {
 			if oldPuzzle < progression.CurrentPuzzle && !progression.PuzzleCompletedEventSent {
-				err := integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
-				if err != nil {
-					log.Printf("ERRO ao enviar puzzle event: %v", err)
-				} else {
-					progression.PuzzleCompletedEventSent = true
-					log.Printf("INFO: Puzzle event enviado para team %s, puzzle %d", *teamPtr, progression.CurrentPuzzle)
-				}
+				_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
+				progression.PuzzleCompletedEventSent = true
 			}
 
 			if progression.Completed && !progression.CaseCompletedEventSent {
-				err := integration.SendCaseEvent(tournament, *teamPtr)
-				if err != nil {
-					log.Printf("ERRO ao enviar case event: %v", err)
-				} else {
-					progression.CaseCompletedEventSent = true
-					log.Printf("INFO: Case event enviado para team %s", *teamPtr)
-				}
+				_ = integration.SendCaseEvent(tournament, *teamPtr)
+				progression.CaseCompletedEventSent = true
 			}
 		}
 
