@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func (h *GameHandler) ValidateTeam(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +123,7 @@ func (h *GameHandler) LeaveCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	progression.Active = false
+	progression.SessionID = primitive.NilObjectID
 	if err := h.MongoManager.UpsertProgression(progression); err != nil {
 		http.Error(w, `{"error":"Erro ao atualizar"}`, http.StatusInternalServerError)
 		return
