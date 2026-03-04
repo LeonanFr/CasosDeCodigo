@@ -99,34 +99,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
-	if cleanSQL == "RESET" {
-		err = h.MongoManager.ResetProgression(
-			req.CaseID,
-			userPtr,
-			teamPtr,
-			matriculaPtr,
-			caso.Config.StartingPuzzle,
-		)
-		if err != nil {
-			http.Error(w, `{"error":"Erro ao resetar progresso"}`, http.StatusInternalServerError)
-			return
-		}
-		response := models.GameResponse{
-			Success:   true,
-			IsReset:   true,
-			Narrative: "Progresso resetado.",
-			State: models.GameState{
-				CaseID:        req.CaseID,
-				CurrentPuzzle: caso.Config.StartingPuzzle,
-				CurrentFocus:  "none",
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
 	var tournament *models.Tournament
 	if isTournament {
 		tournament, err = h.MongoManager.GetActiveTournament()
@@ -158,6 +130,34 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+
+	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
+	if cleanSQL == "RESET" {
+		err = h.MongoManager.ResetProgression(
+			req.CaseID,
+			userPtr,
+			teamPtr,
+			matriculaPtr,
+			caso.Config.StartingPuzzle,
+		)
+		if err != nil {
+			http.Error(w, `{"error":"Erro ao resetar progresso"}`, http.StatusInternalServerError)
+			return
+		}
+		response := models.GameResponse{
+			Success:   true,
+			IsReset:   true,
+			Narrative: "Progresso resetado.",
+			State: models.GameState{
+				CaseID:        req.CaseID,
+				CurrentPuzzle: caso.Config.StartingPuzzle,
+				CurrentFocus:  "none",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
 	}
 
 	response, historyItem, err := h.GameProcessor.ProcessCommand(caso, progression, req.SQL)
