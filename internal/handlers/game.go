@@ -43,7 +43,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	var userPtr *primitive.ObjectID
 	var teamPtr *string
 	var matriculaPtr *string
-	var sessionPtr *primitive.ObjectID
 	isTournament := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
@@ -53,7 +52,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		teamPtr = req.TeamCode
 		matriculaPtr = &req.Matricula
-		sessionPtr = &sessionID
 		isTournament = true
 	} else {
 		userPtr = &userID

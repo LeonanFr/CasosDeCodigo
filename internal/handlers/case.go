@@ -121,7 +121,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	var userPtr *primitive.ObjectID
 	var teamPtr *string
 	var matriculaPtr *string
-	var sessionPtr *primitive.ObjectID
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
 		if req.Matricula == "" {
@@ -130,7 +129,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		}
 		teamPtr = req.TeamCode
 		matriculaPtr = &req.Matricula
-		sessionPtr = &sessionID
 	} else if ok {
 		userPtr = &userID
 	} else {
