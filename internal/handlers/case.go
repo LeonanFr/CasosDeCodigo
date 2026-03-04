@@ -158,11 +158,12 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 
 	if progression != nil {
 		if teamPtr != nil {
-			if progression.Active && progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
-				http.Error(w, `{"error": "Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
-				return
-			}
-			if !progression.Active || progression.SessionID == primitive.NilObjectID {
+			if progression.Active {
+				if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
+					http.Error(w, `{"error": "Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
+					return
+				}
+			} else {
 				progression.Active = true
 				progression.SessionID = sessionID
 				if err := h.MongoManager.UpsertProgression(progression); err != nil {
@@ -172,7 +173,18 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
+
 		if teamPtr != nil {
+			ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
+			if err != nil {
+				http.Error(w, `{"error": "Erro ao verificar reserva de matrícula"}`, http.StatusInternalServerError)
+				return
+			}
+			if ms == nil || ms.Matricula != req.Matricula {
+				http.Error(w, `{"error": "Matrícula não reservada para esta sessão"}`, http.StatusForbidden)
+				return
+			}
+
 			count, err := h.MongoManager.CountAllProgressionsByMatricula(*teamPtr, req.Matricula)
 			if err != nil {
 				http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
