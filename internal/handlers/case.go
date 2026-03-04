@@ -158,11 +158,12 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 
 	if progression != nil {
 		if teamPtr != nil {
-			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
-				http.Error(w, `{"error": "Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
-				return
-			}
-			if !progression.Active {
+			if progression.Active {
+				if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
+					http.Error(w, `{"error": "Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
+					return
+				}
+			} else {
 				progression.Active = true
 				progression.SessionID = sessionID
 				if err := h.MongoManager.UpsertProgression(progression); err != nil {
