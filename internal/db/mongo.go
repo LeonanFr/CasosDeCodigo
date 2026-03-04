@@ -422,7 +422,6 @@ func (m *MongoManager) ReserveMember(teamCode, matricula string, sessionID primi
 	var existingSession models.MemberSession
 	err := m.MemberSessionsColl.FindOne(ctx, filterSession).Decode(&existingSession)
 	if err == nil {
-
 		if existingSession.Matricula == matricula {
 			return nil
 		}
@@ -444,6 +443,28 @@ func (m *MongoManager) ReserveMember(teamCode, matricula string, sessionID primi
 			return errors.New("matrícula já está em uso por outra sessão")
 		}
 		return nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
+
+	filterInactive := bson.M{
+		"team_code": teamCode,
+		"matricula": matricula,
+		"active":    false,
+	}
+	var inactive models.MemberSession
+	err = m.MemberSessionsColl.FindOne(ctx, filterInactive).Decode(&inactive)
+	if err == nil {
+		update := bson.M{
+			"$set": bson.M{
+				"session_id": sessionID,
+				"active":     true,
+				"updated_at": time.Now(),
+			},
+		}
+		_, err = m.MemberSessionsColl.UpdateOne(ctx, bson.M{"_id": inactive.ID}, update)
+		return err
 	}
 	if !errors.Is(err, mongo.ErrNoDocuments) {
 		return err
