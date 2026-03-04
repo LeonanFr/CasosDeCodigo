@@ -22,6 +22,7 @@ type MongoManager struct {
 	TelemetryColl      *mongo.Collection
 	TournamentsColl    *mongo.Collection
 	MemberSessionsColl *mongo.Collection
+	ChatMessagesColl   *mongo.Collection
 }
 
 func NewMongoManager(uri, dbName string) (*MongoManager, error) {
@@ -48,6 +49,7 @@ func NewMongoManager(uri, dbName string) (*MongoManager, error) {
 		TelemetryColl:      db.Collection("telemetry"),
 		TournamentsColl:    db.Collection("tournaments"),
 		MemberSessionsColl: db.Collection("member_sessions"),
+		ChatMessagesColl:   db.Collection("chat_messages"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -127,7 +129,20 @@ func (m *MongoManager) createIndexes() error {
 			},
 		},
 	}
+
 	if _, err := m.MemberSessionsColl.Indexes().CreateMany(ctx, memberSessionIndexes); err != nil {
+		return err
+	}
+
+	chatIndexes := []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "team_code", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "timestamp", Value: -1}},
+		},
+	}
+	if _, err := m.ChatMessagesColl.Indexes().CreateMany(ctx, chatIndexes); err != nil {
 		return err
 	}
 
