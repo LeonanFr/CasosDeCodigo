@@ -170,7 +170,18 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	historyItem := outcome.HistoryItem
 
 	if response.Success {
+
+		if historyItem != nil && historyItem.Query != "" && !response.IsDebug {
+			progression.SQLHistory = append(progression.SQLHistory, *historyItem)
+		}
+
+		if err := h.MongoManager.UpsertProgression(progression); err != nil {
+			http.Error(w, `{"error":"Erro ao salvar progresso"}`, http.StatusInternalServerError)
+			return
+		}
+
 		if isTournament && tournament != nil {
+
 			if progression.PuzzlesEventSent == nil {
 				progression.PuzzlesEventSent = make(map[int]bool)
 			}
@@ -182,7 +193,10 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			_ = h.MongoManager.UpsertProgression(progression)
+
 			if outcome.CaseCompleted {
+
 				caseBelongs := false
 				for _, id := range tournament.CaseIDs {
 					if id == caso.ID {
@@ -190,24 +204,22 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
+
 				if caseBelongs {
-					allCompleted, err := h.MongoManager.HasTeamCompletedAllTournamentCases(*teamPtr, tournament.CaseIDs)
+
+					allCompleted, err := h.MongoManager.
+						HasTeamCompletedAllTournamentCases(*teamPtr, tournament.CaseIDs)
+
 					if err != nil {
 						http.Error(w, err.Error(), http.StatusInternalServerError)
 						return
 					}
+
 					if allCompleted {
 						_ = integration.SendCaseEvent(tournament, *teamPtr)
 					}
 				}
 			}
-		}
-
-		_ = h.MongoManager.UpsertProgression(progression)
-
-		if historyItem != nil && historyItem.Query != "" && !response.IsDebug {
-			progression.SQLHistory = append(progression.SQLHistory, *historyItem)
-			_ = h.MongoManager.UpsertProgression(progression)
 		}
 	}
 
