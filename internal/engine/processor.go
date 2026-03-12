@@ -16,15 +16,42 @@ import (
 type GameProcessor struct {
 	SQLiteFactory *db.SQLiteFactory
 	Validator     *Validator
-	dbCache       map[string]*sql.DB
+	dbCache       map[string]*cachedDB
 	mu            sync.RWMutex
+}
+
+type cachedDB struct {
+	db         *sql.DB
+	lastAccess time.Time
 }
 
 func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 	return &GameProcessor{
 		SQLiteFactory: factory,
 		Validator:     NewValidator(),
-		dbCache:       make(map[string]*sql.DB),
+		dbCache:       make(map[string]*cachedDB),
+	}
+}
+
+func (p *GameProcessor) StartCleanupRoutine(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		for range ticker.C {
+			p.cleanupInactiveDbs(maxAge)
+		}
+	}()
+}
+
+func (p *GameProcessor) cleanupInactiveDbs(maxAge time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+	for key, cached := range p.dbCache {
+		if now.Sub(cached.lastAccess) > maxAge {
+			cached.db.Close()
+			delete(p.dbCache, key)
+		}
 	}
 }
 
@@ -39,9 +66,9 @@ func (p *GameProcessor) ResetSession(prog *models.Progression) error {
 	key := p.sessionKey(prog)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if database, exists := p.dbCache[key]; exists {
-		err := database.Close()
-		if err != nil {
+
+	if cached, exists := p.dbCache[key]; exists {
+		if err := cached.db.Close(); err != nil {
 			return err
 		}
 		delete(p.dbCache, key)
@@ -315,24 +342,32 @@ func (p *GameProcessor) executeSQL(
 	defer cancel()
 
 	key := p.sessionKey(progression)
+
 	p.mu.RLock()
-	dbInstance, exists := p.dbCache[key]
+	cached, exists := p.dbCache[key]
 	p.mu.RUnlock()
 
-	if !exists {
+	var dbInstance *sql.DB
 
+	if !exists {
 		newDB, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
 		if err != nil {
 			return nil, nil, err
 		}
-
 		_, _ = newDB.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
 
 		p.mu.Lock()
-		p.dbCache[key] = newDB
+		p.dbCache[key] = &cachedDB{
+			db:         newDB,
+			lastAccess: time.Now(),
+		}
 		p.mu.Unlock()
 		dbInstance = newDB
 	} else {
+		p.mu.Lock()
+		cached.lastAccess = time.Now()
+		p.mu.Unlock()
+		dbInstance = cached.db
 		_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
 	}
 

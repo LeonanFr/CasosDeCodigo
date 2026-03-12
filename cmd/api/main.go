@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -31,6 +32,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(mongoManager)
 	caseHandler := handlers.NewCaseHandler(mongoManager)
 	gameHandler := handlers.NewGameHandler(mongoManager, sqliteFactory)
+	gameHandler.GameProcessor.StartCleanupRoutine(5*time.Minute, 30*time.Minute)
 
 	router := mux.NewRouter()
 
