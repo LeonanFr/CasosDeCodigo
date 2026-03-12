@@ -173,6 +173,10 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if outcome.NewPuzzle != outcome.OldPuzzle {
+		_ = h.GameProcessor.ResetSession(progression)
+	}
+
 	response := outcome.Response
 	historyItem := outcome.HistoryItem
 
