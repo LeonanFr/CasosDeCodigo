@@ -427,7 +427,7 @@ func (p *GameProcessor) executeSQL(
 		return valRes, historyItem, nil
 	}
 
-	msg := "Comando executado com sucesso. O banco de dados foi atualizado."
+	msg := "Comando executado com sucesso. No entanto, algo ainda está errado. Verifique se a tabela não contém dados demais ou de menos."
 	if isSelect {
 		msg = "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
 	}
