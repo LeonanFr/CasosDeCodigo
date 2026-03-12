@@ -9,19 +9,44 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 type GameProcessor struct {
 	SQLiteFactory *db.SQLiteFactory
 	Validator     *Validator
+	dbCache       map[string]*sql.DB
+	mu            sync.RWMutex
 }
 
 func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 	return &GameProcessor{
 		SQLiteFactory: factory,
 		Validator:     NewValidator(),
+		dbCache:       make(map[string]*sql.DB),
 	}
+}
+
+func (p *GameProcessor) sessionKey(prog *models.Progression) string {
+	if prog.TeamCode != nil {
+		return fmt.Sprintf("team:%s:case:%s:mat:%s", *prog.TeamCode, prog.CaseID, prog.Matricula)
+	}
+	return fmt.Sprintf("user:%s:case:%s", prog.UserID.Hex(), prog.CaseID)
+}
+
+func (p *GameProcessor) ResetSession(prog *models.Progression) error {
+	key := p.sessionKey(prog)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if database, exists := p.dbCache[key]; exists {
+		err := database.Close()
+		if err != nil {
+			return err
+		}
+		delete(p.dbCache, key)
+	}
+	return nil
 }
 
 func (p *GameProcessor) executeInternal(caso *models.Case, prog *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
@@ -261,11 +286,9 @@ func (p *GameProcessor) executeSQL(
 	for i, part := range rawParts {
 		trimmed := strings.TrimSpace(part)
 		if trimmed == "" {
-
 			if i == len(rawParts)-1 {
 				continue
 			}
-
 			return &models.GameResponse{
 				Success: false,
 				Error:   fmt.Sprintf("Erro: comando vazio detectado entre ';' (posição %d). Remova ';' extras.", i+1),
@@ -284,22 +307,34 @@ func (p *GameProcessor) executeSQL(
 	}
 
 	cleanQuery := strings.Join(parts, "; ")
+	normalizedQuery := NormalizeSQL(cleanQuery)
+	upper := strings.ToUpper(strings.TrimSpace(cleanQuery))
+	isSelect := strings.HasPrefix(upper, "SELECT")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	dbInstance, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
-	if err != nil {
-		return nil, nil, err
+	key := p.sessionKey(progression)
+	p.mu.RLock()
+	dbInstance, exists := p.dbCache[key]
+	p.mu.RUnlock()
+
+	if !exists {
+
+		newDB, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		_, _ = newDB.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
+
+		p.mu.Lock()
+		p.dbCache[key] = newDB
+		p.mu.Unlock()
+		dbInstance = newDB
+	} else {
+		_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
 	}
-	defer dbInstance.Close()
-
-	_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
-
-	normalizedQuery := NormalizeSQL(cleanQuery)
-
-	upper := strings.ToUpper(strings.TrimSpace(cleanQuery))
-	isSelect := strings.HasPrefix(upper, "SELECT")
 
 	var data interface{}
 	var historyItem *models.SQLHistoryItem
@@ -323,7 +358,7 @@ func (p *GameProcessor) executeSQL(
 		defer rows.Close()
 		data = p.serializeRows(rows)
 	} else {
-		_, err = dbInstance.ExecContext(ctx, normalizedQuery)
+		_, err := dbInstance.ExecContext(ctx, normalizedQuery)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return &models.GameResponse{
@@ -338,6 +373,7 @@ func (p *GameProcessor) executeSQL(
 				State:   p.getCurrentState(caso, progression),
 			}, nil, nil
 		}
+
 		historyItem = &models.SQLHistoryItem{
 			Timestamp:   time.Now(),
 			Query:       query,

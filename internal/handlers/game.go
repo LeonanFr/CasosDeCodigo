@@ -145,6 +145,12 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"Erro ao resetar progresso"}`, http.StatusInternalServerError)
 			return
 		}
+
+		err := h.GameProcessor.ResetSession(progression)
+		if err != nil {
+			return
+		}
+
 		response := models.GameResponse{
 			Success:   true,
 			IsReset:   true,
@@ -157,6 +163,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
+
 		return
 	}
 
