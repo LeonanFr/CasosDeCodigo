@@ -372,7 +372,16 @@ func (m *MongoManager) ResetProgression(
 		filter["matricula"] = *matricula
 	}
 
-	_, err := m.ProgressionColl.UpdateOne(
+	var existing models.Progression
+	err := m.ProgressionColl.FindOne(ctx, filter).Decode(&existing)
+	keepCompleted := false
+	if err == nil {
+		keepCompleted = existing.Completed
+	} else if !errors.Is(err, mongo.ErrNoDocuments) {
+		return err
+	}
+
+	_, err = m.ProgressionColl.UpdateOne(
 		ctx,
 		filter,
 		bson.M{
@@ -382,14 +391,15 @@ func (m *MongoManager) ResetProgression(
 				"sql_history":        []models.SQLHistoryItem{},
 				"puzzle_checkpoints": bson.M{},
 				"active":             true,
-				"completed":          false,
+				"completed":          keepCompleted,
 				"updated_at":         time.Now(),
 			},
 		},
+		options.Update().SetUpsert(true),
 	)
+
 	return err
 }
-
 func (m *MongoManager) SaveTelemetry(event *models.TelemetryEvent) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
