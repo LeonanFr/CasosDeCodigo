@@ -196,6 +196,8 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.SQLHistory = progression.SQLHistory[:idx]
 		progression.CurrentFocus = "none"
 
+		_ = p.ResetSession(progression)
+
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: "Checkpoint restaurado. Você volta ao início do puzzle atual.",
