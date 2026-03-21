@@ -70,6 +70,7 @@ type Validation struct {
 	FailureImageKey  string `json:"failure_image_key,omitempty" bson:"failure_image_key,omitempty"`
 	UnlocksNext      bool   `json:"unlocks_next" bson:"unlocks_next"`
 	NextPuzzle       int    `json:"next_puzzle" bson:"next_puzzle"`
+	Accent           bool   `json:"accent,omitempty" bson:"accent,omitempty"`
 }
 
 type FocusRequirement struct {

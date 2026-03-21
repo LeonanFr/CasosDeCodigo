@@ -5,13 +5,12 @@ import (
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/handlers"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 	"log"
 	"net/http"
 	"os"
 	"time"
-
-	"github.com/gorilla/mux"
-	"github.com/rs/cors"
 )
 
 func main() {
@@ -25,7 +24,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Erro ao conectar ao MongoDB: %v", err)
 	}
-	defer mongoManager.Close()
+	defer func(mongoManager *db.MongoManager) {
+		err := mongoManager.Close()
+		if err != nil {
+		}
+	}(mongoManager)
 
 	sqliteFactory := db.NewSQLiteFactory()
 

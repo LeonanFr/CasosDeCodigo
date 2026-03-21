@@ -456,8 +456,13 @@ func (p *GameProcessor) runValidations(
 	for _, v := range caso.Validations {
 		if v.Puzzle == prog.CurrentPuzzle {
 			var passed bool
+			checkSQL := v.CheckSQL
+			if v.Accent {
+				checkSQL = strings.ReplaceAll(checkSQL, "NORMALIZE(", "UPPER(")
+			}
+			
 			var count interface{}
-			err := dbInstance.QueryRow(v.CheckSQL).Scan(&count)
+			err := dbInstance.QueryRow(checkSQL).Scan(&count)
 
 			if err == nil && fmt.Sprintf("%v", count) == v.ExpectValue {
 				passed = true
