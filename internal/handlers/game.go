@@ -88,7 +88,6 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		if isTournament {
 			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
 				http.Error(w, `{"error":"Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
