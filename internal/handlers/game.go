@@ -206,8 +206,8 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	response := outcome.Response
 	historyItem := outcome.HistoryItem
 
-	if response.Success {
-		if historyItem != nil && historyItem.Query != "" && !response.IsDebug {
+	if response != nil {
+		if response.Success && historyItem != nil && historyItem.Query != "" && !response.IsDebug {
 			progression.SQLHistory = append(progression.SQLHistory, *historyItem)
 		}
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
