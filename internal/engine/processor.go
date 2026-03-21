@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -143,16 +144,15 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progressi
 	return outcome, nil
 }
 
-func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int) map[string]bool {
+func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int, focus string) map[string]bool {
 	objects := make(map[string]bool)
 	for _, resp := range caso.CommandResponses {
 		if !strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") {
 			continue
 		}
-		if !p.checkConditionForPuzzle(resp, puzzle) {
+		if !p.checkConditionForPuzzle(resp, puzzle, focus) {
 			continue
 		}
-
 		parts := strings.Fields(resp.Command)
 		if len(parts) < 2 {
 			continue
@@ -163,26 +163,26 @@ func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int) map[s
 	return objects
 }
 
-func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puzzle int) bool {
+func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puzzle int, focus string) bool {
 	switch resp.Condition {
 	case "always":
 		return true
 	case "puzzle_state":
-		val := 0
-		fmt.Sscanf(resp.Value, "%d", &val)
+		val, _ := strconv.Atoi(resp.Value)
 		return puzzle == val
 	case "puzzle_state_not":
-		val := 0
-		fmt.Sscanf(resp.Value, "%d", &val)
+		val, _ := strconv.Atoi(resp.Value)
 		return puzzle != val
 	case "puzzle_state_less":
-		val := 0
-		fmt.Sscanf(resp.Value, "%d", &val)
+		val, _ := strconv.Atoi(resp.Value)
 		return puzzle < val
 	case "puzzle_state_greater":
-		val := 0
-		fmt.Sscanf(resp.Value, "%d", &val)
+		val, _ := strconv.Atoi(resp.Value)
 		return puzzle > val
+	case "current_focus":
+		return strings.EqualFold(focus, resp.Value)
+	case "current_focus_not":
+		return !strings.EqualFold(focus, resp.Value)
 	default:
 		return false
 	}
@@ -212,7 +212,7 @@ func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.
 	}
 	prog.SeenObjects = append(prog.SeenObjects, obj)
 
-	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle)
+	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle, prog.CurrentFocus)
 	if currentResp != "" {
 		key := p.sessionKey(prog) + ":" + obj
 		p.cacheMu.Lock()
@@ -225,12 +225,12 @@ func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.
 }
 
 func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *models.Case, newPuzzle int) {
-	available := p.getAvailableObjects(caso, newPuzzle)
+	available := p.getAvailableObjects(caso, newPuzzle, prog.CurrentFocus)
 	unseen := []string{}
 	seen := []string{}
 
 	for obj := range available {
-		currentResp := p.getObjectResponse(caso, obj, newPuzzle)
+		currentResp := p.getObjectResponse(caso, obj, newPuzzle, prog.CurrentFocus)
 		if currentResp == "" {
 			continue
 		}
@@ -253,9 +253,9 @@ func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *model
 	prog.SeenObjects = seen
 }
 
-func (p *GameProcessor) getObjectResponse(caso *models.Case, obj string, puzzle int) string {
+func (p *GameProcessor) getObjectResponse(caso *models.Case, obj string, puzzle int, focus string) string {
 	for _, resp := range caso.CommandResponses {
-		if strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") && p.checkConditionForPuzzle(resp, puzzle) {
+		if strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") && p.checkConditionForPuzzle(resp, puzzle, focus) {
 			parts := strings.Fields(resp.Command)
 			if len(parts) >= 2 && strings.EqualFold(parts[1], obj) {
 				return resp.Response
@@ -403,6 +403,8 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.CurrentFocus = newFocus
 		state := p.getCurrentState(caso, progression)
 
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+
 		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
 			obj := strings.ToLower(parts[1])
 			p.markObjectAsSeen(progression, caso, obj)
@@ -464,6 +466,10 @@ func (p *GameProcessor) checkCondition(resp models.CommandResponse, prog *models
 		val := 0
 		fmt.Sscanf(resp.Value, "%d", &val)
 		return prog.CurrentPuzzle > val
+	case "current_focus":
+		return strings.EqualFold(prog.CurrentFocus, resp.Value)
+	case "current_focus_not":
+		return !strings.EqualFold(prog.CurrentFocus, resp.Value)
 	case "current_focus_none":
 		return prog.CurrentFocus == "none"
 	default:
