@@ -321,6 +321,32 @@ func (p *GameProcessor) handleLookList(caso *models.Case, prog *models.Progressi
 	}
 }
 
+func (p *GameProcessor) validateFocusRequirement(caso *models.Case, prog *models.Progression, command string) error {
+	upperCmd := strings.ToUpper(strings.TrimSpace(command))
+	for _, req := range caso.FocusRequirements {
+		if req.Puzzle == prog.CurrentPuzzle {
+			for _, cmdType := range req.CommandTypes {
+				if cmdType == "OLHAR" && strings.HasPrefix(upperCmd, "OLHAR") {
+					if !strings.EqualFold(prog.CurrentFocus, req.RequiredFocus) {
+						return models.APIError{
+							Message: req.ErrorMessage,
+							Code:    models.ErrFocusRequired,
+						}
+					}
+				} else if strings.EqualFold(upperCmd, cmdType) {
+					if !strings.EqualFold(prog.CurrentFocus, req.RequiredFocus) {
+						return models.APIError{
+							Message: req.ErrorMessage,
+							Code:    models.ErrFocusRequired,
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models.Progression, command string) *models.GameResponse {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
@@ -391,6 +417,16 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 	}
 
 	if bestMatch != nil {
+		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") {
+			if err := p.validateFocusRequirement(caso, progression, command); err != nil {
+				return &models.GameResponse{
+					Success: false,
+					Error:   err.Error(),
+					State:   p.getCurrentState(caso, progression),
+				}
+			}
+		}
+
 		newFocus := progression.CurrentFocus
 		if strings.HasPrefix(command, "OLHAR") && len(parts) > 1 {
 			newFocus = strings.ToLower(parts[1])
