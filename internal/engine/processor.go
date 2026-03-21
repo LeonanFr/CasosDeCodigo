@@ -4,7 +4,9 @@ import (
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/models"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -13,11 +15,19 @@ import (
 	"time"
 )
 
+type objectResponse struct {
+	ResponseHash string
+	Puzzle       int
+}
+
 type GameProcessor struct {
 	SQLiteFactory *db.SQLiteFactory
 	Validator     *Validator
 	dbCache       map[string]*cachedDB
 	mu            sync.RWMutex
+
+	objectCache map[string]*objectResponse
+	cacheMu     sync.RWMutex
 }
 
 type cachedDB struct {
@@ -30,6 +40,7 @@ func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 		SQLiteFactory: factory,
 		Validator:     NewValidator(),
 		dbCache:       make(map[string]*cachedDB),
+		objectCache:   make(map[string]*objectResponse),
 	}
 }
 
@@ -72,6 +83,14 @@ func (p *GameProcessor) ResetSession(prog *models.Progression) error {
 			return err
 		}
 		delete(p.dbCache, key)
+	}
+
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	for k := range p.objectCache {
+		if strings.HasPrefix(k, key+":") {
+			delete(p.objectCache, k)
+		}
 	}
 	return nil
 }
@@ -169,7 +188,7 @@ func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puz
 	}
 }
 
-func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, obj string) {
+func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.Case, obj string) {
 	obj = strings.ToLower(obj)
 
 	newUnseen := make([]string, 0, len(prog.UnseenObjects))
@@ -192,25 +211,63 @@ func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, obj string) {
 		}
 	}
 	prog.SeenObjects = append(prog.SeenObjects, obj)
+
+	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle)
+	if currentResp != "" {
+		key := p.sessionKey(prog) + ":" + obj
+		p.cacheMu.Lock()
+		defer p.cacheMu.Unlock()
+		p.objectCache[key] = &objectResponse{
+			ResponseHash: hash(currentResp),
+			Puzzle:       prog.CurrentPuzzle,
+		}
+	}
 }
 
 func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *models.Case, newPuzzle int) {
 	available := p.getAvailableObjects(caso, newPuzzle)
+	unseen := []string{}
+	seen := []string{}
 
-	unseen := make([]string, 0, len(available))
 	for obj := range available {
-		unseen = append(unseen, obj)
-	}
+		currentResp := p.getObjectResponse(caso, obj, newPuzzle)
+		if currentResp == "" {
+			continue
+		}
+		key := p.sessionKey(prog) + ":" + obj
+		p.cacheMu.RLock()
+		cached := p.objectCache[key]
+		p.cacheMu.RUnlock()
 
-	seen := make([]string, 0)
-	for _, obj := range prog.SeenObjects {
-		if available[obj] {
+		if cached == nil {
+			unseen = append(unseen, obj)
+		} else {
 			seen = append(seen, obj)
+			if hash(currentResp) != cached.ResponseHash || cached.Puzzle != newPuzzle {
+				unseen = append(unseen, obj)
+			}
 		}
 	}
 
 	prog.UnseenObjects = unseen
 	prog.SeenObjects = seen
+}
+
+func (p *GameProcessor) getObjectResponse(caso *models.Case, obj string, puzzle int) string {
+	for _, resp := range caso.CommandResponses {
+		if strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") && p.checkConditionForPuzzle(resp, puzzle) {
+			parts := strings.Fields(resp.Command)
+			if len(parts) >= 2 && strings.EqualFold(parts[1], obj) {
+				return resp.Response
+			}
+		}
+	}
+	return ""
+}
+
+func hash(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }
 
 func (p *GameProcessor) handleLookList(caso *models.Case, prog *models.Progression) *models.GameResponse {
@@ -348,7 +405,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 
 		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
 			obj := strings.ToLower(parts[1])
-			p.markObjectAsSeen(progression, obj)
+			p.markObjectAsSeen(progression, caso, obj)
 		}
 
 		if bestMatch.UnlocksNext {
