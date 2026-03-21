@@ -243,7 +243,7 @@ func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *model
 			unseen = append(unseen, obj)
 		} else {
 			seen = append(seen, obj)
-			if hash(currentResp) != cached.ResponseHash || cached.Puzzle != newPuzzle {
+			if hash(currentResp) != cached.ResponseHash {
 				unseen = append(unseen, obj)
 			}
 		}
