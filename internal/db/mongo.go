@@ -393,6 +393,8 @@ func (m *MongoManager) ResetProgression(
 				"active":             true,
 				"completed":          keepCompleted,
 				"updated_at":         time.Now(),
+				"seen_objects":       []string{},
+				"unseen_objects":     []string{},
 			},
 		},
 		options.Update().SetUpsert(true),
