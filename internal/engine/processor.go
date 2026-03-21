@@ -173,6 +173,7 @@ func (p *GameProcessor) handleLookList(
 		State:     p.getCurrentState(caso, prog),
 	}
 }
+
 func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models.Progression, command string) *models.GameResponse {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
@@ -258,6 +259,18 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
 			progression.CurrentFocus = "none"
 			state = p.getCurrentState(caso, progression)
+		}
+
+		if strings.EqualFold(parts[0], "AJUDA") && len(parts) == 1 {
+			tables := state.Tables
+			if len(tables) > 0 {
+				tableItems := make([]string, len(tables))
+				for i, t := range tables {
+					tableItems[i] = fmt.Sprintf("<span class=\"table-name\">%s</span>", t)
+				}
+				tableList := "\nTabelas relevantes: " + strings.Join(tableItems, ", ")
+				bestMatch.Response += tableList
+			}
 		}
 
 		return &models.GameResponse{
@@ -460,7 +473,7 @@ func (p *GameProcessor) runValidations(
 			if v.Accent {
 				checkSQL = strings.ReplaceAll(checkSQL, "NORMALIZE(", "UPPER(")
 			}
-			
+
 			var count interface{}
 			err := dbInstance.QueryRow(checkSQL).Scan(&count)
 
