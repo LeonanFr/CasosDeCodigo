@@ -147,10 +147,14 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progressi
 func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int, focus string) map[string]bool {
 	objects := make(map[string]bool)
 	for _, resp := range caso.CommandResponses {
-		if !strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") {
+		commandUpper := strings.ToUpper(resp.Command)
+		if !strings.HasPrefix(commandUpper, "OLHAR ") {
 			continue
 		}
 		if !p.checkConditionForPuzzle(resp, puzzle, focus) {
+			continue
+		}
+		if !p.isFocusValidForCommand(caso, puzzle, focus, commandUpper) {
 			continue
 		}
 		parts := strings.Fields(resp.Command)
@@ -255,11 +259,19 @@ func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *model
 
 func (p *GameProcessor) getObjectResponse(caso *models.Case, obj string, puzzle int, focus string) string {
 	for _, resp := range caso.CommandResponses {
-		if strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") && p.checkConditionForPuzzle(resp, puzzle, focus) {
-			parts := strings.Fields(resp.Command)
-			if len(parts) >= 2 && strings.EqualFold(parts[1], obj) {
-				return resp.Response
-			}
+		commandUpper := strings.ToUpper(resp.Command)
+		if !strings.HasPrefix(commandUpper, "OLHAR ") {
+			continue
+		}
+		if !p.checkConditionForPuzzle(resp, puzzle, focus) {
+			continue
+		}
+		if !p.isFocusValidForCommand(caso, puzzle, focus, commandUpper) {
+			continue
+		}
+		parts := strings.Fields(resp.Command)
+		if len(parts) >= 2 && strings.EqualFold(parts[1], obj) {
+			return resp.Response
 		}
 	}
 	return ""
@@ -345,6 +357,26 @@ func (p *GameProcessor) validateFocusRequirement(caso *models.Case, prog *models
 		}
 	}
 	return nil
+}
+
+func (p *GameProcessor) isFocusValidForCommand(caso *models.Case, puzzle int, focus string, commandUpper string) bool {
+	for _, req := range caso.FocusRequirements {
+		if req.Puzzle != puzzle {
+			continue
+		}
+		for _, cmdType := range req.CommandTypes {
+			if cmdType == "OLHAR" && strings.HasPrefix(commandUpper, "OLHAR") {
+				if !strings.EqualFold(focus, req.RequiredFocus) {
+					return false
+				}
+			} else if strings.EqualFold(commandUpper, cmdType) {
+				if !strings.EqualFold(focus, req.RequiredFocus) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models.Progression, command string) *models.GameResponse {
