@@ -11,6 +11,7 @@ type GameResponse struct {
 	ImageKey        string      `json:"image_key"`
 	SuccessImageKey string      `json:"success_image_key,omitempty"`
 	FailureImageKey string      `json:"failure_image_key,omitempty"`
+	IsSQLError      bool        `json:"-"`
 }
 
 type QueryResult struct {

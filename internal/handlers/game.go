@@ -71,16 +71,17 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	if progression == nil {
 		progression = &models.Progression{
-			UserID:        userPtr,
-			TeamCode:      teamPtr,
-			Matricula:     req.Matricula,
-			SessionID:     sessionID,
-			CaseID:        req.CaseID,
-			CurrentPuzzle: caso.Config.StartingPuzzle,
-			CurrentFocus:  "none",
-			SQLHistory:    []models.SQLHistoryItem{},
-			Active:        true,
-			Completed:     false,
+			UserID:            userPtr,
+			TeamCode:          teamPtr,
+			Matricula:         req.Matricula,
+			SessionID:         sessionID,
+			CaseID:            req.CaseID,
+			CurrentPuzzle:     caso.Config.StartingPuzzle,
+			CurrentFocus:      "none",
+			SQLHistory:        []models.SQLHistoryItem{},
+			Active:            true,
+			Completed:         false,
+			ConsecutiveErrors: 0,
 		}
 		h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {

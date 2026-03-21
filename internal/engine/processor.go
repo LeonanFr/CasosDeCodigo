@@ -128,6 +128,23 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progressi
 		return nil, err
 	}
 
+	if response != nil {
+		if response.Success {
+			prog.ConsecutiveErrors = 0
+		} else if response.IsSQLError {
+			prog.ConsecutiveErrors++
+			if prog.ConsecutiveErrors >= 5 {
+				hint := "\n\nVocê está tendo dificuldades com SQL? Utilize AJUDA SELECT, AJUDA INSERT, etc., para ver exemplos."
+				if response.Narrative != "" {
+					response.Narrative += hint
+				} else {
+					response.Narrative = hint
+				}
+				prog.ConsecutiveErrors = 0
+			}
+		}
+	}
+
 	caseCompleted := prog.CurrentPuzzle >= len(caso.Puzzles)
 	if caseCompleted {
 		prog.Completed = true
@@ -560,9 +577,10 @@ func (p *GameProcessor) executeSQL(
 				continue
 			}
 			return &models.GameResponse{
-				Success: false,
-				Error:   fmt.Sprintf("Erro: comando vazio detectado entre ';' (posição %d). Remova ';' extras.", i+1),
-				State:   p.getCurrentState(caso, progression),
+				Success:    false,
+				Error:      fmt.Sprintf("Erro: comando vazio detectado entre ';' (posição %d). Remova ';' extras.", i+1),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
 			}, nil, nil
 		}
 		parts = append(parts, trimmed)
@@ -622,15 +640,17 @@ func (p *GameProcessor) executeSQL(
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return &models.GameResponse{
-					Success: false,
-					Error:   "A consulta excedeu o tempo limite",
-					State:   p.getCurrentState(caso, progression),
+					Success:    false,
+					Error:      "A consulta excedeu o tempo limite",
+					State:      p.getCurrentState(caso, progression),
+					IsSQLError: true,
 				}, nil, nil
 			}
 			return &models.GameResponse{
-				Success: false,
-				Error:   err.Error(),
-				State:   p.getCurrentState(caso, progression),
+				Success:    false,
+				Error:      err.Error(),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
 			}, nil, nil
 		}
 		defer rows.Close()
@@ -640,15 +660,17 @@ func (p *GameProcessor) executeSQL(
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return &models.GameResponse{
-					Success: false,
-					Error:   "O comando excedeu o tempo limite",
-					State:   p.getCurrentState(caso, progression),
+					Success:    false,
+					Error:      "O comando excedeu o tempo limite",
+					State:      p.getCurrentState(caso, progression),
+					IsSQLError: true,
 				}, nil, nil
 			}
 			return &models.GameResponse{
-				Success: false,
-				Error:   err.Error(),
-				State:   p.getCurrentState(caso, progression),
+				Success:    false,
+				Error:      err.Error(),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
 			}, nil, nil
 		}
 
