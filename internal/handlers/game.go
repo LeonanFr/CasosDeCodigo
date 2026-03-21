@@ -82,11 +82,13 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			Active:        true,
 			Completed:     false,
 		}
+		h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
 			http.Error(w, `{"error":"Erro ao criar progresso"}`, http.StatusInternalServerError)
 			return
 		}
 	} else {
+		h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		if isTournament {
 			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
 				http.Error(w, `{"error":"Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
@@ -100,7 +102,14 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var tournament *models.Tournament
+	var teamCode string
 	if isTournament {
+		if teamPtr == nil {
+			http.Error(w, `{"error":"Time não identificado"}`, http.StatusInternalServerError)
+			return
+		}
+		teamCode = *teamPtr
+
 		tournament, err = h.MongoManager.GetActiveTournament()
 		if err != nil || tournament == nil {
 			http.Error(w, `{"error":"torneio indisponível"}`, http.StatusServiceUnavailable)
@@ -109,7 +118,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 		allStarted := true
 		for _, caseID := range tournament.CaseIDs {
-			filter := bson.M{"team_code": *teamPtr, "case_id": caseID}
+			filter := bson.M{"team_code": teamCode, "case_id": caseID}
 			count, err := h.MongoManager.ProgressionColl.CountDocuments(ctx, filter)
 			if err != nil || count == 0 {
 				allStarted = false
@@ -126,7 +135,9 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 					State:     h.GameProcessor.GetCurrentState(caso, progression),
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(response)
+				if err := json.NewEncoder(w).Encode(response); err != nil {
+					return
+				}
 				return
 			}
 		}
@@ -134,20 +145,27 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 
 	cleanSQL := strings.ToUpper(strings.TrimSpace(req.SQL))
 	if cleanSQL == "RESET" {
-		err = h.MongoManager.ResetProgression(
+		if err := h.MongoManager.ResetProgression(
 			req.CaseID,
 			userPtr,
 			teamPtr,
 			matriculaPtr,
 			caso.Config.StartingPuzzle,
-		)
-		if err != nil {
+		); err != nil {
 			http.Error(w, `{"error":"Erro ao resetar progresso"}`, http.StatusInternalServerError)
 			return
 		}
 
-		err := h.GameProcessor.ResetSession(progression)
+		progression, err = h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
 		if err != nil {
+			http.Error(w, `{"error":"Erro ao recarregar progresso"}`, http.StatusInternalServerError)
+			return
+		}
+		if progression != nil {
+			h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+			_ = h.GameProcessor.ResetSession(progression)
+		} else {
+			http.Error(w, `{"error":"Progresso não encontrado após reset"}`, http.StatusNotFound)
 			return
 		}
 
@@ -162,8 +180,9 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			return
+		}
 		return
 	}
 
@@ -181,33 +200,27 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	historyItem := outcome.HistoryItem
 
 	if response.Success {
-
 		if historyItem != nil && historyItem.Query != "" && !response.IsDebug {
 			progression.SQLHistory = append(progression.SQLHistory, *historyItem)
 		}
-
 		if err := h.MongoManager.UpsertProgression(progression); err != nil {
 			http.Error(w, `{"error":"Erro ao salvar progresso"}`, http.StatusInternalServerError)
 			return
 		}
 
 		if isTournament && tournament != nil {
-
 			if progression.PuzzlesEventSent == nil {
 				progression.PuzzlesEventSent = make(map[int]bool)
 			}
-
 			for p := outcome.OldPuzzle; p < outcome.NewPuzzle; p++ {
 				if !progression.PuzzlesEventSent[p] {
-					_ = integration.SendPuzzleEvent(tournament, *teamPtr, req.Matricula)
+					_ = integration.SendPuzzleEvent(tournament, teamCode, req.Matricula)
 					progression.PuzzlesEventSent[p] = true
 				}
 			}
-
 			_ = h.MongoManager.UpsertProgression(progression)
 
 			if outcome.CaseCompleted {
-
 				caseBelongs := false
 				for _, id := range tournament.CaseIDs {
 					if id == caso.ID {
@@ -215,19 +228,14 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
-
 				if caseBelongs {
-
-					allCompleted, err := h.MongoManager.
-						HasTeamCompletedAllTournamentCases(*teamPtr, tournament.CaseIDs)
-
+					allCompleted, err := h.MongoManager.HasTeamCompletedAllTournamentCases(teamCode, tournament.CaseIDs)
 					if err != nil {
 						http.Error(w, err.Error(), http.StatusInternalServerError)
 						return
 					}
-
 					if allCompleted {
-						_ = integration.SendCaseEvent(tournament, *teamPtr)
+						_ = integration.SendCaseEvent(tournament, teamCode)
 					}
 				}
 			}
@@ -248,35 +256,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	if !response.Success {
 		w.WriteHeader(http.StatusBadRequest)
 	}
-	json.NewEncoder(w).Encode(response)
-}
-
-func (h *GameHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
-	userID, ok := auth.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, `{"error":"Não autorizado"}`, http.StatusUnauthorized)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
-
-	teamCode := r.URL.Query().Get("team_code")
-	var progressions []models.Progression
-	var err error
-
-	if teamCode != "" {
-		progressions, err = h.MongoManager.GetTournamentProgressions(teamCode)
-	} else {
-		progressions, err = h.MongoManager.GetUserProgressions(userID)
-	}
-
-	if err != nil {
-		http.Error(w, `{"error":"Erro ao buscar progresso"}`, http.StatusInternalServerError)
-		return
-	}
-
-	if progressions == nil {
-		progressions = []models.Progression{}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(progressions)
 }

@@ -124,20 +124,13 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progressi
 	return outcome, nil
 }
 
-func (p *GameProcessor) handleLookList(
-	caso *models.Case,
-	prog *models.Progression,
-) *models.GameResponse {
-
-	objMap := map[string]bool{}
-
+func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int) map[string]bool {
+	objects := make(map[string]bool)
 	for _, resp := range caso.CommandResponses {
-
 		if !strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") {
 			continue
 		}
-
-		if !p.checkCondition(resp, prog) {
+		if !p.checkConditionForPuzzle(resp, puzzle) {
 			continue
 		}
 
@@ -145,12 +138,100 @@ func (p *GameProcessor) handleLookList(
 		if len(parts) < 2 {
 			continue
 		}
+		obj := strings.ToLower(parts[1])
+		objects[obj] = true
+	}
+	return objects
+}
 
-		obj := strings.ToUpper(parts[1])
-		objMap[obj] = true
+func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puzzle int) bool {
+	switch resp.Condition {
+	case "always":
+		return true
+	case "puzzle_state":
+		val := 0
+		fmt.Sscanf(resp.Value, "%d", &val)
+		return puzzle == val
+	case "puzzle_state_not":
+		val := 0
+		fmt.Sscanf(resp.Value, "%d", &val)
+		return puzzle != val
+	case "puzzle_state_less":
+		val := 0
+		fmt.Sscanf(resp.Value, "%d", &val)
+		return puzzle < val
+	case "puzzle_state_greater":
+		val := 0
+		fmt.Sscanf(resp.Value, "%d", &val)
+		return puzzle > val
+	default:
+		return false
+	}
+}
+
+func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, obj string) {
+	obj = strings.ToLower(obj)
+
+	newUnseen := make([]string, 0, len(prog.UnseenObjects))
+	found := false
+	for _, o := range prog.UnseenObjects {
+		if o == obj {
+			found = true
+			continue
+		}
+		newUnseen = append(newUnseen, o)
+	}
+	if !found {
+		return
+	}
+	prog.UnseenObjects = newUnseen
+
+	for _, o := range prog.SeenObjects {
+		if o == obj {
+			return
+		}
+	}
+	prog.SeenObjects = append(prog.SeenObjects, obj)
+}
+
+func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *models.Case, newPuzzle int) {
+	available := p.getAvailableObjects(caso, newPuzzle)
+
+	unseen := make([]string, 0, len(available))
+	for obj := range available {
+		unseen = append(unseen, obj)
 	}
 
-	if len(objMap) == 0 {
+	seen := make([]string, 0)
+	for _, obj := range prog.SeenObjects {
+		if available[obj] {
+			seen = append(seen, obj)
+		}
+	}
+
+	prog.UnseenObjects = unseen
+	prog.SeenObjects = seen
+}
+
+func (p *GameProcessor) handleLookList(caso *models.Case, prog *models.Progression) *models.GameResponse {
+	unseenMap := make(map[string]bool)
+	for _, obj := range prog.UnseenObjects {
+		unseenMap[obj] = true
+	}
+	seenMap := make(map[string]bool)
+	for _, obj := range prog.SeenObjects {
+		seenMap[obj] = true
+	}
+
+	all := make(map[string]bool)
+	for obj := range unseenMap {
+		all[obj] = true
+	}
+	for obj := range seenMap {
+		all[obj] = true
+	}
+
+	if len(all) == 0 {
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: "Você olha ao redor, mas nada parece chamar sua atenção agora.",
@@ -158,15 +239,24 @@ func (p *GameProcessor) handleLookList(
 		}
 	}
 
-	objects := make([]string, 0, len(objMap))
-	for o := range objMap {
-		objects = append(objects, o)
+	objects := make([]string, 0, len(all))
+	for obj := range all {
+		objects = append(objects, obj)
 	}
-
 	sort.Strings(objects)
 
-	narrative := "Você olha ao redor. Objetos visíveis: " + strings.Join(objects, ", ")
+	var items []string
+	for _, obj := range objects {
+		if unseenMap[obj] && seenMap[obj] {
+			items = append(items, fmt.Sprintf("<span class=\"changed-object\">%s</span>", obj))
+		} else if unseenMap[obj] {
+			items = append(items, fmt.Sprintf("<span class=\"unseen-object\">%s</span>", obj))
+		} else {
+			items = append(items, fmt.Sprintf("<span class=\"seen-object\">%s</span>", obj))
+		}
+	}
 
+	narrative := "Você olha ao redor. Objetos visíveis: " + strings.Join(items, ", ")
 	return &models.GameResponse{
 		Success:   true,
 		Narrative: narrative,
@@ -199,6 +289,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 
 		_ = p.ResetSession(progression)
 
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: "Checkpoint restaurado. Você volta ao início do puzzle atual.",
@@ -259,6 +350,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
 			progression.CurrentFocus = "none"
 			state = p.getCurrentState(caso, progression)
+			p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		}
 
 		if strings.EqualFold(parts[0], "AJUDA") && len(parts) == 1 {
@@ -271,6 +363,11 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 				tableList := "\nTabelas relevantes: " + strings.Join(tableItems, ", ")
 				bestMatch.Response += tableList
 			}
+		}
+
+		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
+			obj := strings.ToLower(parts[1])
+			p.markObjectAsSeen(progression, obj)
 		}
 
 		return &models.GameResponse{
@@ -491,6 +588,7 @@ func (p *GameProcessor) runValidations(
 						effectiveLen++
 					}
 					p.ensurePuzzleCheckpoint(prog, prog.CurrentPuzzle, effectiveLen)
+					p.RefreshObjectLists(prog, caso, prog.CurrentPuzzle)
 				}
 
 				state := p.getCurrentState(caso, prog)

@@ -27,6 +27,9 @@ type Progression struct {
 	PuzzlesEventSent       map[int]bool `bson:"puzzles_event_sent,omitempty" json:"puzzles_event_sent,omitempty"`
 	CaseCompletedEventSent bool         `bson:"case_completed_event_sent,omitempty" json:"case_completed_event_sent,omitempty"`
 
+	SeenObjects   []string `bson:"seen_objects,omitempty" json:"seen_objects,omitempty"`
+	UnseenObjects []string `bson:"unseen_objects,omitempty" json:"unseen_objects,omitempty"`
+
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
 }
