@@ -346,6 +346,11 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.CurrentFocus = newFocus
 		state := p.getCurrentState(caso, progression)
 
+		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
+			obj := strings.ToLower(parts[1])
+			p.markObjectAsSeen(progression, obj)
+		}
+
 		if bestMatch.UnlocksNext {
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
 			progression.CurrentFocus = "none"
@@ -363,11 +368,6 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 				tableList := "\nTabelas relevantes: " + strings.Join(tableItems, ", ")
 				bestMatch.Response += tableList
 			}
-		}
-
-		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
-			obj := strings.ToLower(parts[1])
-			p.markObjectAsSeen(progression, obj)
 		}
 
 		return &models.GameResponse{
