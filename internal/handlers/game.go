@@ -88,6 +88,13 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		if len(progression.UnseenObjects) == 0 && len(progression.SeenObjects) == 0 {
+			h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+			if err := h.MongoManager.UpsertProgression(progression); err != nil {
+				http.Error(w, `{"error":"Erro ao inicializar objetos"}`, http.StatusInternalServerError)
+				return
+			}
+		}
 		if isTournament {
 			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
 				http.Error(w, `{"error":"Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
