@@ -248,11 +248,11 @@ func (p *GameProcessor) handleLookList(caso *models.Case, prog *models.Progressi
 	var items []string
 	for _, obj := range objects {
 		if unseenMap[obj] && seenMap[obj] {
-			items = append(items, fmt.Sprintf("<span class=\"changed-object\">%s</span>", obj))
+			items = append(items, fmt.Sprintf("<span class=\"changed-object\">%s</span>", strings.ToUpper(obj)))
 		} else if unseenMap[obj] {
-			items = append(items, fmt.Sprintf("<span class=\"unseen-object\">%s</span>", obj))
+			items = append(items, fmt.Sprintf("<span class=\"unseen-object\">%s</span>", strings.ToUpper(obj)))
 		} else {
-			items = append(items, fmt.Sprintf("<span class=\"seen-object\">%s</span>", obj))
+			items = append(items, fmt.Sprintf("<span class=\"seen-object\">%s</span>", strings.ToUpper(obj)))
 		}
 	}
 
