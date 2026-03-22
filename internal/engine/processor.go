@@ -140,6 +140,11 @@ func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progressi
 				} else {
 					response.Narrative = hint
 				}
+				if response.Error != "" {
+					response.Error += hint
+				} else {
+					response.Error = hint
+				}
 				prog.ConsecutiveErrors = 0
 			}
 		}
