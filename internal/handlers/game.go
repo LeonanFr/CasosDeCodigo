@@ -89,6 +89,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
+		h.GameProcessor.LoadProgressionCache(progression, caso)
 		if len(progression.UnseenObjects) == 0 && len(progression.SeenObjects) == 0 {
 			h.GameProcessor.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 			if err := h.MongoManager.UpsertProgression(progression); err != nil {

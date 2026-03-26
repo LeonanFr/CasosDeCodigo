@@ -238,13 +238,35 @@ func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.
 	}
 	prog.SeenObjects = append(prog.SeenObjects, obj)
 
+	if prog.SeenObjectsHash == nil {
+		prog.SeenObjectsHash = make(map[string]string)
+	}
 	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle, prog.CurrentFocus)
 	if currentResp != "" {
-		key := p.sessionKey(prog) + ":" + obj
-		p.cacheMu.Lock()
-		defer p.cacheMu.Unlock()
-		p.objectCache[key] = &objectResponse{
-			ResponseHash: hash(currentResp),
+		prog.SeenObjectsHash[obj] = hash(currentResp)
+	}
+
+	key := p.sessionKey(prog) + ":" + obj
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	p.objectCache[key] = &objectResponse{
+		ResponseHash: hash(currentResp),
+		Puzzle:       prog.CurrentPuzzle,
+	}
+}
+
+func (p *GameProcessor) LoadProgressionCache(prog *models.Progression, caso *models.Case) {
+	if prog == nil || caso == nil {
+		return
+	}
+	key := p.sessionKey(prog)
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+
+	for obj, hashVal := range prog.SeenObjectsHash {
+		cacheKey := key + ":" + obj
+		p.objectCache[cacheKey] = &objectResponse{
+			ResponseHash: hashVal,
 			Puzzle:       prog.CurrentPuzzle,
 		}
 	}

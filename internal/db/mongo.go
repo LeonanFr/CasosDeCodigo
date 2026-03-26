@@ -396,6 +396,7 @@ func (m *MongoManager) ResetProgression(
 				"consecutive_errors": 0,
 				"seen_objects":       []string{},
 				"unseen_objects":     []string{},
+				"seen_objects_hash":  bson.M{},
 			},
 		},
 		options.Update().SetUpsert(true),
