@@ -6,12 +6,14 @@ import (
 	"casos-de-codigo-api/internal/models"
 	"casos-de-codigo-api/internal/ws"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type CaseHandler struct {
@@ -133,29 +135,22 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		matriculaPtr = &req.Matricula
 
 		if req.Practice {
-			var existingProg bson.M
+			var existingProg models.Progression
 			err := h.MongoManager.ProgressionColl.FindOne(r.Context(), bson.M{
 				"team_code": *teamPtr,
-				"matricula": req.Matricula,
 				"case_id":   req.CaseID,
 				"active":    true,
 			}).Decode(&existingProg)
 
 			if err == nil {
-			} else {
-				count, err := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
-					"team_code": *teamPtr,
-					"case_id":   req.CaseID,
-					"active":    true,
-				})
-				if err != nil {
-					http.Error(w, `{"error":"Erro ao verificar disponibilidade"}`, http.StatusInternalServerError)
-					return
-				}
-				if count > 0 {
+				if existingProg.Matricula != req.Matricula {
 					http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
 					return
 				}
+			} else if errors.Is(err, mongo.ErrNoDocuments) {
+			} else {
+				http.Error(w, `{"error":"Erro ao verificar progresso"}`, http.StatusInternalServerError)
+				return
 			}
 		} else {
 			ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
