@@ -7,18 +7,33 @@ import (
 )
 
 type Progression struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	UserID        primitive.ObjectID `bson:"user_id" json:"user_id"`
-	CaseID        string             `bson:"case_id" json:"case_id"`
-	CurrentPuzzle int                `bson:"current_puzzle" json:"current_puzzle"`
-	CurrentFocus  string             `bson:"current_focus" json:"current_focus"`
-	SQLHistory    []SQLHistoryItem   `bson:"sql_history" json:"sql_history"`
+	ID primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 
-	PuzzleCheckpoints map[string]int `bson:"puzzle_checkpoints,omitempty" json:"puzzle_checkpoints,omitempty"`
+	UserID    *primitive.ObjectID `bson:"user_id,omitempty" json:"user_id,omitempty"`
+	TeamCode  *string             `bson:"team_code,omitempty" json:"team_code,omitempty"`
+	Matricula string              `bson:"matricula,omitempty" json:"matricula,omitempty"`
+	SessionID primitive.ObjectID  `bson:"session_id,omitempty" json:"session_id,omitempty"`
+
+	CaseID string `bson:"case_id" json:"case_id"`
+
+	CurrentPuzzle     int              `bson:"current_puzzle" json:"current_puzzle"`
+	CurrentFocus      string           `bson:"current_focus" json:"current_focus"`
+	SQLHistory        []SQLHistoryItem `bson:"sql_history" json:"sql_history"`
+	PuzzleCheckpoints map[string]int   `bson:"puzzle_checkpoints" json:"puzzle_checkpoints"`
+
+	Active    bool `bson:"active" json:"active"`
+	Completed bool `bson:"completed" json:"completed"`
+
+	PuzzlesEventSent       map[int]bool `bson:"puzzles_event_sent,omitempty" json:"puzzles_event_sent,omitempty"`
+	CaseCompletedEventSent bool         `bson:"case_completed_event_sent,omitempty" json:"case_completed_event_sent,omitempty"`
+	ConsecutiveErrors      int          `bson:"consecutive_errors,omitempty" json:"consecutive_errors,omitempty"`
+
+	SeenObjects     []string          `bson:"seen_objects,omitempty" json:"seen_objects,omitempty"`
+	UnseenObjects   []string          `bson:"unseen_objects,omitempty" json:"unseen_objects,omitempty"`
+	SeenObjectsHash map[string]string `bson:"seen_objects_hash,omitempty" json:"seen_objects_hash,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updated_at"`
-	Completed bool      `bson:"completed" json:"completed"`
 }
 
 type SQLHistoryItem struct {

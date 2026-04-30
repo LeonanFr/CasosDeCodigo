@@ -1,44 +1,42 @@
 package main
 
 import (
+	"casos-de-codigo-api/config"
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/handlers"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
 
 func main() {
-	secret := os.Getenv("JWT_SECRET")
-	if err := auth.InitJWT(secret); err != nil {
+	cfg := config.Load()
+
+	if err := auth.InitJWT(cfg.JWTSecret); err != nil {
 		log.Fatalf("Erro ao inicializar JWT: %v", err)
 	}
 
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-
-	mongoDBName := os.Getenv("MONGO_DB")
-	if mongoDBName == "" {
-		mongoDBName = "casos_de_codigo"
-	}
-
-	mongoManager, err := db.NewMongoManager(mongoURI, mongoDBName)
+	mongoManager, err := db.NewMongoManager(cfg.MongoURI, cfg.MongoDB)
 	if err != nil {
 		log.Fatalf("Erro ao conectar ao MongoDB: %v", err)
 	}
-	defer mongoManager.Close()
+	defer func(mongoManager *db.MongoManager) {
+		err := mongoManager.Close()
+		if err != nil {
+		}
+	}(mongoManager)
 
 	sqliteFactory := db.NewSQLiteFactory()
 
 	authHandler := handlers.NewAuthHandler(mongoManager)
 	caseHandler := handlers.NewCaseHandler(mongoManager)
 	gameHandler := handlers.NewGameHandler(mongoManager, sqliteFactory)
+	gameHandler.GameProcessor.StartCleanupRoutine(5*time.Minute, 30*time.Minute)
 
 	router := mux.NewRouter()
 
@@ -70,20 +68,35 @@ func main() {
 	router.Handle("/api/game/execute", auth.Middleware(http.HandlerFunc(gameHandler.ExecuteCommand))).Methods("POST")
 	router.Handle("/api/game/progress", auth.Middleware(http.HandlerFunc(gameHandler.GetProgress))).Methods("GET")
 
+	router.Handle(
+		"/api/game/team/validate",
+		auth.Middleware(http.HandlerFunc(gameHandler.ValidateTeam)),
+	).Methods("GET")
+
+	router.Handle("/api/game/tournament/status", auth.Middleware(http.HandlerFunc(gameHandler.TournamentStatus))).Methods("GET")
+	router.Handle("/api/game/leave", auth.Middleware(http.HandlerFunc(gameHandler.LeaveCase))).Methods("POST")
+	router.Handle("/api/game/team/ws", auth.Middleware(http.HandlerFunc(gameHandler.TeamWebSocket)))
+
+	router.Handle("/api/tournament/reserve", auth.Middleware(http.HandlerFunc(gameHandler.ReserveMember))).Methods("POST")
+	router.Handle("/api/tournament/release", auth.Middleware(http.HandlerFunc(gameHandler.ReleaseMember))).Methods("POST")
+	router.Handle("/api/tournament/my-matricula", auth.Middleware(http.HandlerFunc(gameHandler.GetMyMatricula))).Methods("GET")
+
+	router.Handle("/api/chat/ws", auth.Middleware(http.HandlerFunc(gameHandler.ChatWebSocket)))
+
+	router.Handle("/api/coop/decks", auth.Middleware(http.HandlerFunc(gameHandler.GetCoopDecks))).Methods("GET")
+	router.Handle("/api/practice/room/create", auth.Middleware(http.HandlerFunc(gameHandler.CreatePracticeRoom))).Methods("POST")
+	router.Handle("/api/practice/room/check", auth.Middleware(http.HandlerFunc(gameHandler.CheckPracticeRoom))).Methods("GET")
+	router.Handle("/api/practice/room/status", auth.Middleware(http.HandlerFunc(gameHandler.PracticeRoomStatus))).Methods("GET")
+
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Guest-ID"},
-		ExposedHeaders:   []string{"X-Guest-ID"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Guest-ID", "X-Session-ID"},
+		ExposedHeaders:   []string{"X-Guest-ID", "X-Session-ID"},
 		AllowCredentials: true,
 		Debug:            false,
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("🚀 Servidor iniciado na porta %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, corsHandler.Handler(router)))
+	log.Printf("🚀 Servidor iniciado na porta %s", cfg.Port)
+	log.Fatal(http.ListenAndServe(":"+cfg.Port, corsHandler.Handler(router)))
 }

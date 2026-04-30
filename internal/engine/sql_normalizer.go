@@ -9,7 +9,7 @@ var whereRegex = regexp.MustCompile(`(?is)(.*?\bwhere\b)(.*)`)
 func NormalizeSQL(query string) string {
 	matches := whereRegex.FindStringSubmatch(query)
 	if len(matches) != 3 {
-		return query // não tem WHERE → não mexe
+		return query
 	}
 
 	head := matches[1]

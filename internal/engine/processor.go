@@ -3,74 +3,348 @@ package engine
 import (
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/models"
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+type objectResponse struct {
+	ResponseHash string
+	Puzzle       int
+}
 
 type GameProcessor struct {
 	SQLiteFactory *db.SQLiteFactory
 	Validator     *Validator
+	dbCache       map[string]*cachedDB
+	mu            sync.RWMutex
+
+	objectCache map[string]*objectResponse
+	cacheMu     sync.RWMutex
+}
+
+type cachedDB struct {
+	db         *sql.DB
+	lastAccess time.Time
 }
 
 func NewGameProcessor(factory *db.SQLiteFactory) *GameProcessor {
 	return &GameProcessor{
 		SQLiteFactory: factory,
 		Validator:     NewValidator(),
+		dbCache:       make(map[string]*cachedDB),
+		objectCache:   make(map[string]*objectResponse),
 	}
 }
 
-func (p *GameProcessor) ProcessCommand(caso *models.Case, progression *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
-	p.ensurePuzzleCheckpoint(progression, progression.CurrentPuzzle, len(progression.SQLHistory))
+func (p *GameProcessor) StartCleanupRoutine(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		for range ticker.C {
+			p.cleanupInactiveDbs(maxAge)
+		}
+	}()
+}
+
+func (p *GameProcessor) cleanupInactiveDbs(maxAge time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+	for key, cached := range p.dbCache {
+		if now.Sub(cached.lastAccess) > maxAge {
+			cached.db.Close()
+			delete(p.dbCache, key)
+		}
+	}
+}
+
+func (p *GameProcessor) sessionKey(prog *models.Progression) string {
+	if prog.TeamCode != nil {
+		return fmt.Sprintf("team:%s:case:%s:mat:%s", *prog.TeamCode, prog.CaseID, prog.Matricula)
+	}
+	return fmt.Sprintf("user:%s:case:%s", prog.UserID.Hex(), prog.CaseID)
+}
+
+func (p *GameProcessor) ResetSession(prog *models.Progression) error {
+	key := p.sessionKey(prog)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if cached, exists := p.dbCache[key]; exists {
+		if err := cached.db.Close(); err != nil {
+			return err
+		}
+		delete(p.dbCache, key)
+	}
+
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	for k := range p.objectCache {
+		if strings.HasPrefix(k, key+":") {
+			delete(p.objectCache, k)
+		}
+	}
+	return nil
+}
+
+func (p *GameProcessor) executeInternal(caso *models.Case, prog *models.Progression, command string) (*models.GameResponse, *models.SQLHistoryItem, error) {
+	p.ensurePuzzleCheckpoint(prog, prog.CurrentPuzzle, len(prog.SQLHistory))
 
 	upperCommand := strings.ToUpper(strings.TrimSpace(command))
 
-	if response := p.handleGameCommand(caso, progression, upperCommand); response != nil {
+	if response := p.handleGameCommand(caso, prog, upperCommand); response != nil {
 		return response, nil, nil
 	}
 
-	if err := p.Validator.ValidateSQLCommand(caso, progression, command); err != nil {
-		if apiErr, ok := err.(models.APIError); ok {
+	if err := p.Validator.ValidateSQLCommand(caso, prog, command); err != nil {
+		var apiErr models.APIError
+		if errors.As(err, &apiErr) {
 			return &models.GameResponse{
 				Success: false,
 				Error:   apiErr.Message,
-				State:   p.getCurrentState(caso, progression),
+				State:   p.getCurrentState(caso, prog),
 			}, nil, nil
 		}
 		return nil, nil, err
 	}
 
-	return p.executeSQL(caso, progression, command)
+	return p.executeSQL(caso, prog, command)
 }
-func (p *GameProcessor) handleLookList(
-	caso *models.Case,
-	prog *models.Progression,
-) *models.GameResponse {
 
-	objMap := map[string]bool{}
+func (p *GameProcessor) ProcessCommand(caso *models.Case, prog *models.Progression, command string) (*models.CommandOutcome, error) {
+	oldPuzzle := prog.CurrentPuzzle
 
+	response, historyItem, err := p.executeInternal(caso, prog, command)
+	if err != nil {
+		return nil, err
+	}
+
+	if response != nil {
+		if response.Success {
+			prog.ConsecutiveErrors = 0
+		} else if response.IsSQLError {
+			prog.ConsecutiveErrors++
+			if prog.ConsecutiveErrors >= 5 {
+				hint := "\n\nVocê está tendo dificuldades com SQL? Utilize AJUDA SELECT, AJUDA INSERT, etc., para ver exemplos."
+				if response.Narrative != "" {
+					response.Narrative += hint
+				} else {
+					response.Narrative = hint
+				}
+				if response.Error != "" {
+					response.Error += hint
+				} else {
+					response.Error = hint
+				}
+				prog.ConsecutiveErrors = 0
+			}
+		}
+	}
+
+	caseCompleted := prog.CurrentPuzzle >= len(caso.Puzzles)
+	if caseCompleted {
+		prog.Completed = true
+	}
+
+	outcome := &models.CommandOutcome{
+		Response:      response,
+		HistoryItem:   historyItem,
+		OldPuzzle:     oldPuzzle,
+		NewPuzzle:     prog.CurrentPuzzle,
+		CaseCompleted: caseCompleted,
+	}
+
+	return outcome, nil
+}
+
+func (p *GameProcessor) getAvailableObjects(caso *models.Case, puzzle int, focus string) map[string]bool {
+	objects := make(map[string]bool)
 	for _, resp := range caso.CommandResponses {
-
-		if !strings.HasPrefix(strings.ToUpper(resp.Command), "OLHAR ") {
+		commandUpper := strings.ToUpper(resp.Command)
+		if !strings.HasPrefix(commandUpper, "OLHAR ") {
 			continue
 		}
-
-		if !p.checkCondition(resp, prog) {
+		if !p.checkConditionForPuzzle(resp, puzzle, focus) {
 			continue
 		}
-
+		if !p.isFocusValidForCommand(caso, puzzle, focus, commandUpper) {
+			continue
+		}
 		parts := strings.Fields(resp.Command)
 		if len(parts) < 2 {
 			continue
 		}
+		obj := strings.ToLower(parts[1])
+		objects[obj] = true
+	}
+	return objects
+}
 
-		obj := strings.ToUpper(parts[1])
-		objMap[obj] = true
+func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puzzle int, focus string) bool {
+	switch resp.Condition {
+	case "always":
+		return true
+	case "puzzle_state":
+		val, _ := strconv.Atoi(resp.Value)
+		return puzzle == val
+	case "puzzle_state_not":
+		val, _ := strconv.Atoi(resp.Value)
+		return puzzle != val
+	case "puzzle_state_less":
+		val, _ := strconv.Atoi(resp.Value)
+		return puzzle < val
+	case "puzzle_state_greater":
+		val, _ := strconv.Atoi(resp.Value)
+		return puzzle > val
+	case "current_focus":
+		return strings.EqualFold(focus, resp.Value)
+	case "current_focus_not":
+		return !strings.EqualFold(focus, resp.Value)
+	default:
+		return false
+	}
+}
+
+func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.Case, obj string) {
+	obj = strings.ToLower(obj)
+
+	newUnseen := make([]string, 0, len(prog.UnseenObjects))
+	found := false
+	for _, o := range prog.UnseenObjects {
+		if o == obj {
+			found = true
+			continue
+		}
+		newUnseen = append(newUnseen, o)
+	}
+	if !found {
+		return
+	}
+	prog.UnseenObjects = newUnseen
+
+	for _, o := range prog.SeenObjects {
+		if o == obj {
+			return
+		}
+	}
+	prog.SeenObjects = append(prog.SeenObjects, obj)
+
+	if prog.SeenObjectsHash == nil {
+		prog.SeenObjectsHash = make(map[string]string)
+	}
+	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle, prog.CurrentFocus)
+	if currentResp != "" {
+		prog.SeenObjectsHash[obj] = hash(currentResp)
 	}
 
-	if len(objMap) == 0 {
+	key := p.sessionKey(prog) + ":" + obj
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	p.objectCache[key] = &objectResponse{
+		ResponseHash: hash(currentResp),
+		Puzzle:       prog.CurrentPuzzle,
+	}
+}
+
+func (p *GameProcessor) LoadProgressionCache(prog *models.Progression, caso *models.Case) {
+	if prog == nil || caso == nil {
+		return
+	}
+	key := p.sessionKey(prog)
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+
+	for obj, hashVal := range prog.SeenObjectsHash {
+		cacheKey := key + ":" + obj
+		p.objectCache[cacheKey] = &objectResponse{
+			ResponseHash: hashVal,
+			Puzzle:       prog.CurrentPuzzle,
+		}
+	}
+}
+
+func (p *GameProcessor) RefreshObjectLists(prog *models.Progression, caso *models.Case, newPuzzle int) {
+	available := p.getAvailableObjects(caso, newPuzzle, prog.CurrentFocus)
+	unseen := []string{}
+	seen := []string{}
+
+	for obj := range available {
+		currentResp := p.getObjectResponse(caso, obj, newPuzzle, prog.CurrentFocus)
+		if currentResp == "" {
+			continue
+		}
+		key := p.sessionKey(prog) + ":" + obj
+		p.cacheMu.RLock()
+		cached := p.objectCache[key]
+		p.cacheMu.RUnlock()
+
+		if cached == nil {
+			unseen = append(unseen, obj)
+		} else {
+			seen = append(seen, obj)
+			if hash(currentResp) != cached.ResponseHash {
+				unseen = append(unseen, obj)
+			}
+		}
+	}
+
+	prog.UnseenObjects = unseen
+	prog.SeenObjects = seen
+}
+
+func (p *GameProcessor) getObjectResponse(caso *models.Case, obj string, puzzle int, focus string) string {
+	for _, resp := range caso.CommandResponses {
+		commandUpper := strings.ToUpper(resp.Command)
+		if !strings.HasPrefix(commandUpper, "OLHAR ") {
+			continue
+		}
+		if !p.checkConditionForPuzzle(resp, puzzle, focus) {
+			continue
+		}
+		if !p.isFocusValidForCommand(caso, puzzle, focus, commandUpper) {
+			continue
+		}
+		parts := strings.Fields(resp.Command)
+		if len(parts) >= 2 && strings.EqualFold(parts[1], obj) {
+			return resp.Response
+		}
+	}
+	return ""
+}
+
+func hash(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+func (p *GameProcessor) handleLookList(caso *models.Case, prog *models.Progression) *models.GameResponse {
+	unseenMap := make(map[string]bool)
+	for _, obj := range prog.UnseenObjects {
+		unseenMap[obj] = true
+	}
+	seenMap := make(map[string]bool)
+	for _, obj := range prog.SeenObjects {
+		seenMap[obj] = true
+	}
+
+	all := make(map[string]bool)
+	for obj := range unseenMap {
+		all[obj] = true
+	}
+	for obj := range seenMap {
+		all[obj] = true
+	}
+
+	if len(all) == 0 {
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: "Você olha ao redor, mas nada parece chamar sua atenção agora.",
@@ -78,21 +352,77 @@ func (p *GameProcessor) handleLookList(
 		}
 	}
 
-	objects := make([]string, 0, len(objMap))
-	for o := range objMap {
-		objects = append(objects, o)
+	objects := make([]string, 0, len(all))
+	for obj := range all {
+		objects = append(objects, obj)
 	}
-
 	sort.Strings(objects)
 
-	narrative := "Você olha ao redor. Objetos visíveis: " + strings.Join(objects, ", ")
+	var items []string
+	for _, obj := range objects {
+		if unseenMap[obj] && seenMap[obj] {
+			items = append(items, fmt.Sprintf("<span class=\"changed-object\">%s</span>", strings.ToUpper(obj)))
+		} else if unseenMap[obj] {
+			items = append(items, fmt.Sprintf("<span class=\"unseen-object\">%s</span>", strings.ToUpper(obj)))
+		} else {
+			items = append(items, fmt.Sprintf("<span class=\"seen-object\">%s</span>", strings.ToUpper(obj)))
+		}
+	}
 
+	narrative := "Você olha ao redor. Objetos visíveis: " + strings.Join(items, ", ")
 	return &models.GameResponse{
 		Success:   true,
 		Narrative: narrative,
 		State:     p.getCurrentState(caso, prog),
 	}
 }
+
+func (p *GameProcessor) validateFocusRequirement(caso *models.Case, prog *models.Progression, command string) error {
+	upperCmd := strings.ToUpper(strings.TrimSpace(command))
+	for _, req := range caso.FocusRequirements {
+		if req.Puzzle == prog.CurrentPuzzle {
+			for _, cmdType := range req.CommandTypes {
+				if cmdType == "OLHAR" && strings.HasPrefix(upperCmd, "OLHAR") {
+					if !strings.EqualFold(prog.CurrentFocus, req.RequiredFocus) {
+						return models.APIError{
+							Message: req.ErrorMessage,
+							Code:    models.ErrFocusRequired,
+						}
+					}
+				} else if strings.EqualFold(upperCmd, cmdType) {
+					if !strings.EqualFold(prog.CurrentFocus, req.RequiredFocus) {
+						return models.APIError{
+							Message: req.ErrorMessage,
+							Code:    models.ErrFocusRequired,
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (p *GameProcessor) isFocusValidForCommand(caso *models.Case, puzzle int, focus string, commandUpper string) bool {
+	for _, req := range caso.FocusRequirements {
+		if req.Puzzle != puzzle {
+			continue
+		}
+		for _, cmdType := range req.CommandTypes {
+			if cmdType == "OLHAR" && strings.HasPrefix(commandUpper, "OLHAR") {
+				if !strings.EqualFold(focus, req.RequiredFocus) {
+					return false
+				}
+			} else if strings.EqualFold(commandUpper, cmdType) {
+				if !strings.EqualFold(focus, req.RequiredFocus) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
 func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models.Progression, command string) *models.GameResponse {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
@@ -116,6 +446,9 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.SQLHistory = progression.SQLHistory[:idx]
 		progression.CurrentFocus = "none"
 
+		_ = p.ResetSession(progression)
+
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		return &models.GameResponse{
 			Success:   true,
 			Narrative: "Checkpoint restaurado. Você volta ao início do puzzle atual.",
@@ -160,6 +493,16 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 	}
 
 	if bestMatch != nil {
+		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") {
+			if err := p.validateFocusRequirement(caso, progression, command); err != nil {
+				return &models.GameResponse{
+					Success: false,
+					Error:   err.Error(),
+					State:   p.getCurrentState(caso, progression),
+				}
+			}
+		}
+
 		newFocus := progression.CurrentFocus
 		if strings.HasPrefix(command, "OLHAR") && len(parts) > 1 {
 			newFocus = strings.ToLower(parts[1])
@@ -172,10 +515,30 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.CurrentFocus = newFocus
 		state := p.getCurrentState(caso, progression)
 
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+
+		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
+			obj := strings.ToLower(parts[1])
+			p.markObjectAsSeen(progression, caso, obj)
+		}
+
 		if bestMatch.UnlocksNext {
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
 			progression.CurrentFocus = "none"
 			state = p.getCurrentState(caso, progression)
+			p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+		}
+
+		if strings.EqualFold(parts[0], "AJUDA") && len(parts) == 1 {
+			tables := state.Tables
+			if len(tables) > 0 {
+				tableItems := make([]string, len(tables))
+				for i, t := range tables {
+					tableItems[i] = fmt.Sprintf("<span class=\"table-name\">%s</span>", t)
+				}
+				tableList := "\nTabelas relevantes: " + strings.Join(tableItems, ", ")
+				bestMatch.Response += tableList
+			}
 		}
 
 		return &models.GameResponse{
@@ -215,6 +578,10 @@ func (p *GameProcessor) checkCondition(resp models.CommandResponse, prog *models
 		val := 0
 		fmt.Sscanf(resp.Value, "%d", &val)
 		return prog.CurrentPuzzle > val
+	case "current_focus":
+		return strings.EqualFold(prog.CurrentFocus, resp.Value)
+	case "current_focus_not":
+		return !strings.EqualFold(prog.CurrentFocus, resp.Value)
 	case "current_focus_none":
 		return prog.CurrentFocus == "none"
 	default:
@@ -228,42 +595,112 @@ func (p *GameProcessor) executeSQL(
 	query string,
 ) (*models.GameResponse, *models.SQLHistoryItem, error) {
 
-	dbInstance, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
-	if err != nil {
-		return nil, nil, err
+	rawParts := strings.Split(query, ";")
+	var parts []string
+	for i, part := range rawParts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			if i == len(rawParts)-1 {
+				continue
+			}
+			return &models.GameResponse{
+				Success:    false,
+				Error:      fmt.Sprintf("Erro: comando vazio detectado entre ';' (posição %d). Remova ';' extras.", i+1),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
+			}, nil, nil
+		}
+		parts = append(parts, trimmed)
 	}
-	defer dbInstance.Close()
 
-	_, _ = dbInstance.Exec(`PRAGMA case_sensitive_like = OFF`)
+	if len(parts) == 0 {
+		return &models.GameResponse{
+			Success: false,
+			Error:   "Nenhum comando SQL válido.",
+			State:   p.getCurrentState(caso, progression),
+		}, nil, nil
+	}
 
-	normalizedQuery := NormalizeSQL(query)
-
-	upper := strings.ToUpper(strings.TrimSpace(query))
+	cleanQuery := strings.Join(parts, "; ")
+	normalizedQuery := NormalizeSQL(cleanQuery)
+	upper := strings.ToUpper(strings.TrimSpace(cleanQuery))
 	isSelect := strings.HasPrefix(upper, "SELECT")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	key := p.sessionKey(progression)
+
+	p.mu.RLock()
+	cached, exists := p.dbCache[key]
+	p.mu.RUnlock()
+
+	var dbInstance *sql.DB
+
+	if !exists {
+		newDB, err := p.SQLiteFactory.CreateInMemoryDB(caso, progression)
+		if err != nil {
+			return nil, nil, err
+		}
+		_, _ = newDB.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
+
+		p.mu.Lock()
+		p.dbCache[key] = &cachedDB{
+			db:         newDB,
+			lastAccess: time.Now(),
+		}
+		p.mu.Unlock()
+		dbInstance = newDB
+	} else {
+		p.mu.Lock()
+		cached.lastAccess = time.Now()
+		p.mu.Unlock()
+		dbInstance = cached.db
+		_, _ = dbInstance.ExecContext(ctx, `PRAGMA case_sensitive_like = OFF`)
+	}
 
 	var data interface{}
 	var historyItem *models.SQLHistoryItem
 
 	if isSelect {
-		rows, err := dbInstance.Query(normalizedQuery)
+		rows, err := dbInstance.QueryContext(ctx, normalizedQuery)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return &models.GameResponse{
+					Success:    false,
+					Error:      "A consulta excedeu o tempo limite",
+					State:      p.getCurrentState(caso, progression),
+					IsSQLError: true,
+				}, nil, nil
+			}
 			return &models.GameResponse{
-				Success: false,
-				Error:   err.Error(),
-				State:   p.getCurrentState(caso, progression),
+				Success:    false,
+				Error:      err.Error(),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
 			}, nil, nil
 		}
 		defer rows.Close()
 		data = p.serializeRows(rows)
 	} else {
-		_, err = dbInstance.Exec(normalizedQuery)
+		_, err := dbInstance.ExecContext(ctx, normalizedQuery)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return &models.GameResponse{
+					Success:    false,
+					Error:      "O comando excedeu o tempo limite",
+					State:      p.getCurrentState(caso, progression),
+					IsSQLError: true,
+				}, nil, nil
+			}
 			return &models.GameResponse{
-				Success: false,
-				Error:   err.Error(),
-				State:   p.getCurrentState(caso, progression),
+				Success:    false,
+				Error:      err.Error(),
+				State:      p.getCurrentState(caso, progression),
+				IsSQLError: true,
 			}, nil, nil
 		}
+
 		historyItem = &models.SQLHistoryItem{
 			Timestamp:   time.Now(),
 			Query:       query,
@@ -282,7 +719,7 @@ func (p *GameProcessor) executeSQL(
 		return valRes, historyItem, nil
 	}
 
-	msg := "Comando executado com sucesso. O banco de dados foi atualizado."
+	msg := "Comando executado com sucesso. No entanto, algo ainda está errado. Verifique se a tabela não contém dados demais ou de menos."
 	if isSelect {
 		msg = "Você executa a consulta. As linhas começam a surgir no monitor, frias e impessoais como qualquer outro log do DITEC."
 	}
@@ -309,8 +746,13 @@ func (p *GameProcessor) runValidations(
 	for _, v := range caso.Validations {
 		if v.Puzzle == prog.CurrentPuzzle {
 			var passed bool
+			checkSQL := v.CheckSQL
+			if v.Accent {
+				checkSQL = strings.ReplaceAll(checkSQL, "NORMALIZE(", "UPPER(")
+			}
+
 			var count interface{}
-			err := dbInstance.QueryRow(v.CheckSQL).Scan(&count)
+			err := dbInstance.QueryRow(checkSQL).Scan(&count)
 
 			if err == nil && fmt.Sprintf("%v", count) == v.ExpectValue {
 				passed = true
@@ -326,6 +768,7 @@ func (p *GameProcessor) runValidations(
 						effectiveLen++
 					}
 					p.ensurePuzzleCheckpoint(prog, prog.CurrentPuzzle, effectiveLen)
+					p.RefreshObjectLists(prog, caso, prog.CurrentPuzzle)
 				}
 
 				state := p.getCurrentState(caso, prog)
@@ -375,6 +818,10 @@ func (p *GameProcessor) serializeRows(rows *sql.Rows) models.QueryResult {
 		Columns: cols,
 		Rows:    results,
 	}
+}
+
+func (p *GameProcessor) GetCurrentState(caso *models.Case, prog *models.Progression) models.GameState {
+	return p.getCurrentState(caso, prog)
 }
 
 func (p *GameProcessor) getCurrentState(caso *models.Case, prog *models.Progression) models.GameState {

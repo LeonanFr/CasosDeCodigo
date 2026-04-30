@@ -11,6 +11,7 @@ type GameResponse struct {
 	ImageKey        string      `json:"image_key"`
 	SuccessImageKey string      `json:"success_image_key,omitempty"`
 	FailureImageKey string      `json:"failure_image_key,omitempty"`
+	IsSQLError      bool        `json:"-"`
 }
 
 type QueryResult struct {
@@ -19,14 +20,19 @@ type QueryResult struct {
 }
 
 type ExecuteRequest struct {
-	CaseID string `json:"case_id" validate:"required"`
-	SQL    string `json:"sql" validate:"required"`
+	CaseID    string  `json:"case_id" validate:"required"`
+	SQL       string  `json:"sql" validate:"required"`
+	TeamCode  *string `json:"team_code,omitempty"`
+	Matricula string  `json:"matricula,omitempty"`
+	Practice  bool    `json:"practice,omitempty"`
 }
 
 type InitializeRequest struct {
-	CaseID string `json:"case_id" validate:"required"`
+	CaseID    string  `json:"case_id" validate:"required"`
+	TeamCode  *string `json:"team_code,omitempty"`
+	Matricula string  `json:"matricula,omitempty"`
+	Practice  bool    `json:"practice,omitempty"`
 }
-
 type InitializeResponse struct {
 	Progression *Progression `json:"progression"`
 	Case        *Case        `json:"case"`
