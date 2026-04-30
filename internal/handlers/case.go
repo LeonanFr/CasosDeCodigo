@@ -133,36 +133,23 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		matriculaPtr = &req.Matricula
 
 		if req.Practice {
-			isPractice = true
-
-			count, err := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+			existingProgCount, _ := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
 				"team_code": *teamPtr,
 				"matricula": req.Matricula,
-				"active":    true,
-			})
-			if err != nil {
-				http.Error(w, `{"error":"Erro ao verificar apelido"}`, http.StatusInternalServerError)
-				return
-			}
-			if count > 0 {
-				http.Error(w, `{"error":"Este apelido já está em uso nesta sala."}`, http.StatusConflict)
-				return
-			}
-
-			count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
-				"team_code": *teamPtr,
 				"case_id":   req.CaseID,
 				"active":    true,
 			})
-			if err != nil {
-				http.Error(w, `{"error":"Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
-				return
+			if existingProgCount == 0 {
+				occupiedCount, _ := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+					"team_code": *teamPtr,
+					"case_id":   req.CaseID,
+					"active":    true,
+				})
+				if occupiedCount > 0 {
+					http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
+					return
+				}
 			}
-			if count > 0 {
-				http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
-				return
-			}
-
 		} else {
 			ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
 			if err != nil {
