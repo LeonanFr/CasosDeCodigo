@@ -133,19 +133,26 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		matriculaPtr = &req.Matricula
 
 		if req.Practice {
-			existingProgCount, _ := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+			var existingProg bson.M
+			err := h.MongoManager.ProgressionColl.FindOne(r.Context(), bson.M{
 				"team_code": *teamPtr,
 				"matricula": req.Matricula,
 				"case_id":   req.CaseID,
 				"active":    true,
-			})
-			if existingProgCount == 0 {
-				occupiedCount, _ := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+			}).Decode(&existingProg)
+
+			if err == nil {
+			} else {
+				count, err := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
 					"team_code": *teamPtr,
 					"case_id":   req.CaseID,
 					"active":    true,
 				})
-				if occupiedCount > 0 {
+				if err != nil {
+					http.Error(w, `{"error":"Erro ao verificar disponibilidade"}`, http.StatusInternalServerError)
+					return
+				}
+				if count > 0 {
 					http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
 					return
 				}
