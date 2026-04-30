@@ -44,15 +44,20 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	var teamPtr *string
 	var matriculaPtr *string
 	isTournament := false
+	isPractice := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
 		if req.Matricula == "" {
-			http.Error(w, `{"error":"Matrícula é obrigatória para modo torneio"}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"Matrícula (ou apelido) é obrigatória para modo coop"}`, http.StatusBadRequest)
 			return
 		}
 		teamPtr = req.TeamCode
 		matriculaPtr = &req.Matricula
-		isTournament = true
+		if req.Practice {
+			isPractice = true
+		} else {
+			isTournament = true
+		}
 	} else {
 		userPtr = &userID
 	}
@@ -97,7 +102,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if isTournament {
+		if isTournament || isPractice {
 			if progression.SessionID != primitive.NilObjectID && progression.SessionID != sessionID {
 				http.Error(w, `{"error":"Esta conta já está em uso em outra sessão."}`, http.StatusConflict)
 				return
@@ -109,8 +114,10 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var tournament *models.Tournament
 	var teamCode string
+	var tournament *models.Tournament
+	var practiceRoom *models.PracticeRoom
+
 	if isTournament {
 		if teamPtr == nil {
 			http.Error(w, `{"error":"Time não identificado"}`, http.StatusInternalServerError)
@@ -143,9 +150,43 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 					State:     h.GameProcessor.GetCurrentState(caso, progression),
 				}
 				w.Header().Set("Content-Type", "application/json")
-				if err := json.NewEncoder(w).Encode(response); err != nil {
-					return
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+		}
+	} else if isPractice {
+		if teamPtr == nil {
+			http.Error(w, `{"error":"Time não identificado"}`, http.StatusInternalServerError)
+			return
+		}
+		teamCode = *teamPtr
+
+		practiceRoom, err = h.MongoManager.GetPracticeRoom(teamCode)
+		if err != nil || practiceRoom == nil {
+			http.Error(w, `{"error":"Sala de prática inválida"}`, http.StatusBadRequest)
+			return
+		}
+
+		allStarted := true
+		for _, caseID := range practiceRoom.CaseIDs {
+			filter := bson.M{"team_code": teamCode, "case_id": caseID, "active": true}
+			count, err := h.MongoManager.ProgressionColl.CountDocuments(ctx, filter)
+			if err != nil || count == 0 {
+				allStarted = false
+				break
+			}
+		}
+
+		if !allStarted {
+			cmd := strings.ToUpper(strings.TrimSpace(req.SQL))
+			if cmd != "STATUS" && cmd != "CLS" && cmd != "AJUDA" {
+				response := models.GameResponse{
+					Success:   true,
+					Narrative: "Aguardando seu time se conectar. Digite CLS quando todos estiverem prontos.",
+					State:     h.GameProcessor.GetCurrentState(caso, progression),
 				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(response)
 				return
 			}
 		}
@@ -188,9 +229,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			return
-		}
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -250,7 +289,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !isTournament {
+	if !isTournament && !isPractice {
 		event := &models.TelemetryEvent{
 			UserID:    userID,
 			CaseID:    req.CaseID,
@@ -264,9 +303,7 @@ func (h *GameHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
 	if !response.Success {
 		w.WriteHeader(http.StatusBadRequest)
 	}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		return
-	}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *GameHandler) GetProgress(w http.ResponseWriter, r *http.Request) {

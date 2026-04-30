@@ -23,6 +23,8 @@ type MongoManager struct {
 	TournamentsColl    *mongo.Collection
 	MemberSessionsColl *mongo.Collection
 	ChatMessagesColl   *mongo.Collection
+	PracticeRoomsColl  *mongo.Collection
+	CoopDecksColl      *mongo.Collection
 }
 
 func NewMongoManager(uri, dbName string) (*MongoManager, error) {
@@ -50,6 +52,8 @@ func NewMongoManager(uri, dbName string) (*MongoManager, error) {
 		TournamentsColl:    db.Collection("tournaments"),
 		MemberSessionsColl: db.Collection("member_sessions"),
 		ChatMessagesColl:   db.Collection("chat_messages"),
+		PracticeRoomsColl:  db.Collection("practice_rooms"),
+		CoopDecksColl:      db.Collection("coop_decks"),
 	}
 
 	if err := manager.createIndexes(); err != nil {
@@ -596,4 +600,37 @@ func (m *MongoManager) HasTeamCompletedAllTournamentCases(
 	}
 
 	return int(count) == len(caseIDs), nil
+}
+
+func (m *MongoManager) GetCoopDecks() ([]models.CoopDeck, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cursor, err := m.CoopDecksColl.Find(ctx, bson.M{})
+
+	if err != nil {
+		return nil, err
+	}
+	var decks []models.CoopDeck
+	if err = cursor.All(ctx, &decks); err != nil {
+		return nil, err
+	}
+	return decks, nil
+}
+
+func (m *MongoManager) GetPracticeRoom(code string) (*models.PracticeRoom, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var room models.PracticeRoom
+	err := m.PracticeRoomsColl.FindOne(ctx, bson.M{"_id": code}).Decode(&room)
+	if err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
+func (m *MongoManager) CreatePracticeRoom(room *models.PracticeRoom) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := m.PracticeRoomsColl.InsertOne(ctx, *room)
+	return err
 }

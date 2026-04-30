@@ -5,12 +5,13 @@ import (
 	"casos-de-codigo-api/internal/auth"
 	"casos-de-codigo-api/internal/db"
 	"casos-de-codigo-api/internal/handlers"
-	"github.com/gorilla/mux"
-	"github.com/rs/cors"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
@@ -81,6 +82,11 @@ func main() {
 	router.Handle("/api/tournament/my-matricula", auth.Middleware(http.HandlerFunc(gameHandler.GetMyMatricula))).Methods("GET")
 
 	router.Handle("/api/chat/ws", auth.Middleware(http.HandlerFunc(gameHandler.ChatWebSocket)))
+
+	router.Handle("/api/coop/decks", auth.Middleware(http.HandlerFunc(gameHandler.GetCoopDecks))).Methods("GET")
+	router.Handle("/api/practice/room/create", auth.Middleware(http.HandlerFunc(gameHandler.CreatePracticeRoom))).Methods("POST")
+	router.Handle("/api/practice/room/check", auth.Middleware(http.HandlerFunc(gameHandler.CheckPracticeRoom))).Methods("GET")
+	router.Handle("/api/practice/room/status", auth.Middleware(http.HandlerFunc(gameHandler.PracticeRoomStatus))).Methods("GET")
 
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   []string{"*"},

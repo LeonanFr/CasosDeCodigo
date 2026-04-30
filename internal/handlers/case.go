@@ -122,31 +122,63 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	var userPtr *primitive.ObjectID
 	var teamPtr *string
 	var matriculaPtr *string
+	isPractice := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
 		if req.Matricula == "" {
-			http.Error(w, `{"error": "Matrícula é obrigatória para modo torneio"}`, http.StatusBadRequest)
+			http.Error(w, `{"error":"Matrícula (ou apelido) é obrigatória para modo coop"}`, http.StatusBadRequest)
 			return
 		}
 		teamPtr = req.TeamCode
 		matriculaPtr = &req.Matricula
+
+		if req.Practice {
+			isPractice = true
+
+			count, err := h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+				"team_code": *teamPtr,
+				"matricula": req.Matricula,
+				"active":    true,
+			})
+			if err != nil {
+				http.Error(w, `{"error":"Erro ao verificar apelido"}`, http.StatusInternalServerError)
+				return
+			}
+			if count > 0 {
+				http.Error(w, `{"error":"Este apelido já está em uso nesta sala."}`, http.StatusConflict)
+				return
+			}
+
+			count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), bson.M{
+				"team_code": *teamPtr,
+				"case_id":   req.CaseID,
+				"active":    true,
+			})
+			if err != nil {
+				http.Error(w, `{"error":"Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
+				return
+			}
+			if count > 0 {
+				http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
+				return
+			}
+
+		} else {
+			ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
+			if err != nil {
+				http.Error(w, `{"error": "Erro ao verificar reserva de matrícula"}`, http.StatusInternalServerError)
+				return
+			}
+			if ms == nil || ms.Matricula != req.Matricula {
+				http.Error(w, `{"error": "Matrícula não reservada para esta sessão"}`, http.StatusForbidden)
+				return
+			}
+		}
 	} else if ok {
 		userPtr = &userID
 	} else {
 		http.Error(w, `{"error": "Identificação necessária"}`, http.StatusBadRequest)
 		return
-	}
-
-	if teamPtr != nil {
-		ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
-		if err != nil {
-			http.Error(w, `{"error": "Erro ao verificar reserva de matrícula"}`, http.StatusInternalServerError)
-			return
-		}
-		if ms == nil || ms.Matricula != req.Matricula {
-			http.Error(w, `{"error": "Matrícula não reservada para esta sessão"}`, http.StatusForbidden)
-			return
-		}
 	}
 
 	progression, err := h.MongoManager.GetProgression(req.CaseID, userPtr, teamPtr, matriculaPtr)
@@ -181,25 +213,27 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if teamPtr != nil {
-			count, err := h.MongoManager.CountAllProgressionsByMatricula(*teamPtr, req.Matricula)
-			if err != nil {
-				http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
-				return
-			}
-			if count > 0 {
-				http.Error(w, `{"error": "Esta matrícula já está vinculada a outro caso."}`, http.StatusConflict)
-				return
-			}
+			if !isPractice {
+				count, err := h.MongoManager.CountAllProgressionsByMatricula(*teamPtr, req.Matricula)
+				if err != nil {
+					http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
+					return
+				}
+				if count > 0 {
+					http.Error(w, `{"error": "Esta matrícula já está vinculada a outro caso."}`, http.StatusConflict)
+					return
+				}
 
-			filter := bson.M{"team_code": *teamPtr, "case_id": req.CaseID}
-			count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), filter)
-			if err != nil {
-				http.Error(w, `{"error": "Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
-				return
-			}
-			if count > 0 {
-				http.Error(w, `{"error": "Esta linha narrativa já foi escolhida por outro membro do time."}`, http.StatusConflict)
-				return
+				filter := bson.M{"team_code": *teamPtr, "case_id": req.CaseID}
+				count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), filter)
+				if err != nil {
+					http.Error(w, `{"error": "Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
+					return
+				}
+				if count > 0 {
+					http.Error(w, `{"error": "Esta linha narrativa já foi escolhida por outro membro do time."}`, http.StatusConflict)
+					return
+				}
 			}
 
 			progression = &models.Progression{
@@ -218,9 +252,13 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
 				return
 			}
-			event := map[string]string{"case_id": req.CaseID, "status": "occupied"}
-			data, _ := json.Marshal(event)
-			ws.BroadcastToTeam(*teamPtr, data)
+
+			if !isPractice {
+				event := map[string]string{"case_id": req.CaseID, "status": "occupied"}
+				data, _ := json.Marshal(event)
+				ws.BroadcastToTeam(*teamPtr, data)
+			}
+
 		} else {
 			progression = &models.Progression{
 				UserID:        userPtr,

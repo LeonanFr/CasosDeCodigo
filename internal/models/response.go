@@ -24,12 +24,14 @@ type ExecuteRequest struct {
 	SQL       string  `json:"sql" validate:"required"`
 	TeamCode  *string `json:"team_code,omitempty"`
 	Matricula string  `json:"matricula,omitempty"`
+	Practice  bool    `json:"practice,omitempty"`
 }
 
 type InitializeRequest struct {
 	CaseID    string  `json:"case_id" validate:"required"`
 	TeamCode  *string `json:"team_code,omitempty"`
 	Matricula string  `json:"matricula,omitempty"`
+	Practice  bool    `json:"practice,omitempty"`
 }
 type InitializeResponse struct {
 	Progression *Progression `json:"progression"`
