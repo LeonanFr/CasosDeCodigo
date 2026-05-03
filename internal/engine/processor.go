@@ -214,45 +214,47 @@ func (p *GameProcessor) checkConditionForPuzzle(resp models.CommandResponse, puz
 	}
 }
 
-func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, caso *models.Case, obj string) {
+func (p *GameProcessor) markObjectAsSeen(prog *models.Progression, obj string, response string) {
 	obj = strings.ToLower(obj)
 
 	newUnseen := make([]string, 0, len(prog.UnseenObjects))
-	found := false
 	for _, o := range prog.UnseenObjects {
-		if o == obj {
-			found = true
+		if strings.EqualFold(o, obj) {
 			continue
 		}
 		newUnseen = append(newUnseen, o)
 	}
-	if !found {
-		return
-	}
 	prog.UnseenObjects = newUnseen
 
+	alreadySeen := false
 	for _, o := range prog.SeenObjects {
-		if o == obj {
-			return
+		if strings.EqualFold(o, obj) {
+			alreadySeen = true
+			break
 		}
 	}
-	prog.SeenObjects = append(prog.SeenObjects, obj)
+	if !alreadySeen {
+		prog.SeenObjects = append(prog.SeenObjects, obj)
+	}
 
 	if prog.SeenObjectsHash == nil {
 		prog.SeenObjectsHash = make(map[string]string)
 	}
-	currentResp := p.getObjectResponse(caso, obj, prog.CurrentPuzzle, prog.CurrentFocus)
-	if currentResp != "" {
-		prog.SeenObjectsHash[obj] = hash(currentResp)
+
+	currentHash := hash(response)
+
+	if response != "" {
+		prog.SeenObjectsHash[obj] = currentHash
 	}
 
 	key := p.sessionKey(prog) + ":" + obj
+
 	p.cacheMu.Lock()
-	defer p.cacheMu.Unlock()
 	p.objectCache[key] = &objectResponse{
-		ResponseHash: hash(currentResp),
+		ResponseHash: currentHash,
 		Puzzle:       prog.CurrentPuzzle,
 	}
+	p.cacheMu.Unlock()
 }
 
 func (p *GameProcessor) LoadProgressionCache(prog *models.Progression, caso *models.Case) {
@@ -430,6 +432,7 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 	}
 
 	if parts[0] == "OLHAR" && len(parts) == 1 {
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 		return p.handleLookList(caso, progression)
 	}
 
@@ -513,20 +516,23 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		}
 
 		progression.CurrentFocus = newFocus
-		state := p.getCurrentState(caso, progression)
 
 		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
 			obj := strings.ToLower(parts[1])
-			p.markObjectAsSeen(progression, caso, obj)
+			p.markObjectAsSeen(progression, obj, bestMatch.Response)
 		}
 
 		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 
+		state := p.getCurrentState(caso, progression)
+
 		if bestMatch.UnlocksNext {
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
 			progression.CurrentFocus = "none"
-			state = p.getCurrentState(caso, progression)
+
 			p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
+
+			state = p.getCurrentState(caso, progression)
 		}
 
 		if strings.EqualFold(parts[0], "AJUDA") && len(parts) == 1 {
