@@ -515,12 +515,12 @@ func (p *GameProcessor) handleGameCommand(caso *models.Case, progression *models
 		progression.CurrentFocus = newFocus
 		state := p.getCurrentState(caso, progression)
 
-		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
-
 		if strings.HasPrefix(strings.ToUpper(command), "OLHAR ") && len(parts) > 1 {
 			obj := strings.ToLower(parts[1])
 			p.markObjectAsSeen(progression, caso, obj)
 		}
+
+		p.RefreshObjectLists(progression, caso, progression.CurrentPuzzle)
 
 		if bestMatch.UnlocksNext {
 			progression.CurrentPuzzle = bestMatch.NextPuzzle
