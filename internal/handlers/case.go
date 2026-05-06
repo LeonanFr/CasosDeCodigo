@@ -6,7 +6,6 @@ import (
 	"casos-de-codigo-api/internal/models"
 	"casos-de-codigo-api/internal/ws"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -124,7 +123,6 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 	var userPtr *primitive.ObjectID
 	var teamPtr *string
 	var matriculaPtr *string
-	isPractice := false
 
 	if req.TeamCode != nil && *req.TeamCode != "" {
 		if req.Matricula == "" {
@@ -134,25 +132,7 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		teamPtr = req.TeamCode
 		matriculaPtr = &req.Matricula
 
-		if req.Practice {
-			var existingProg models.Progression
-			err := h.MongoManager.ProgressionColl.FindOne(r.Context(), bson.M{
-				"team_code": *teamPtr,
-				"case_id":   req.CaseID,
-				"active":    true,
-			}).Decode(&existingProg)
-
-			if err == nil {
-				if existingProg.Matricula != req.Matricula {
-					http.Error(w, `{"error":"Este caso já foi escolhido por outro jogador."}`, http.StatusConflict)
-					return
-				}
-			} else if errors.Is(err, mongo.ErrNoDocuments) {
-			} else {
-				http.Error(w, `{"error":"Erro ao verificar progresso"}`, http.StatusInternalServerError)
-				return
-			}
-		} else {
+		if !req.Practice {
 			ms, err := h.MongoManager.GetMemberSessionBySessionID(*teamPtr, sessionID)
 			if err != nil {
 				http.Error(w, `{"error": "Erro ao verificar reserva de matrícula"}`, http.StatusInternalServerError)
@@ -202,64 +182,55 @@ func (h *CaseHandler) InitializeCase(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if teamPtr != nil {
-			if !isPractice {
-				count, err := h.MongoManager.CountAllProgressionsByMatricula(*teamPtr, req.Matricula)
-				if err != nil {
-					http.Error(w, `{"error": "Erro ao verificar disponibilidade da matrícula"}`, http.StatusInternalServerError)
-					return
-				}
-				if count > 0 {
-					http.Error(w, `{"error": "Esta matrícula já está vinculada a outro caso."}`, http.StatusConflict)
-					return
-				}
 
-				filter := bson.M{"team_code": *teamPtr, "case_id": req.CaseID}
-				count, err = h.MongoManager.ProgressionColl.CountDocuments(r.Context(), filter)
-				if err != nil {
-					http.Error(w, `{"error": "Erro ao verificar disponibilidade do caso"}`, http.StatusInternalServerError)
-					return
-				}
-				if count > 0 {
-					http.Error(w, `{"error": "Esta linha narrativa já foi escolhida por outro membro do time."}`, http.StatusConflict)
-					return
-				}
+			newProg := &models.Progression{
+				UserID:            userPtr,
+				TeamCode:          teamPtr,
+				Matricula:         req.Matricula,
+				SessionID:         sessionID,
+				CaseID:            req.CaseID,
+				CurrentPuzzle:     caso.Config.StartingPuzzle,
+				CurrentFocus:      "none",
+				SQLHistory:        []models.SQLHistoryItem{},
+				Active:            true,
+				Completed:         false,
+				ConsecutiveErrors: 0,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
 			}
 
-			progression = &models.Progression{
-				UserID:        userPtr,
-				TeamCode:      teamPtr,
-				Matricula:     req.Matricula,
-				SessionID:     sessionID,
-				CaseID:        req.CaseID,
-				CurrentPuzzle: caso.Config.StartingPuzzle,
-				CurrentFocus:  "none",
-				SQLHistory:    []models.SQLHistoryItem{},
-				Active:        true,
-				Completed:     false,
-			}
-			if err := h.MongoManager.UpsertProgression(progression); err != nil {
-				http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
+			result, err := h.MongoManager.ProgressionColl.InsertOne(r.Context(), newProg)
+			if err != nil {
+				if mongo.IsDuplicateKeyError(err) {
+					http.Error(w, `{"error":"Este caso já foi escolhido por outro membro do time."}`, http.StatusConflict)
+					return
+				}
+				http.Error(w, `{"error":"Erro ao criar progresso"}`, http.StatusInternalServerError)
 				return
 			}
-
-			if !isPractice {
-				event := map[string]string{"case_id": req.CaseID, "status": "occupied"}
-				data, _ := json.Marshal(event)
-				ws.BroadcastToTeam(*teamPtr, data)
+			if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+				newProg.ID = oid
 			}
+			progression = newProg
 
+			event := map[string]string{"case_id": req.CaseID, "status": "occupied"}
+			data, _ := json.Marshal(event)
+			ws.BroadcastToTeam(*teamPtr, data)
 		} else {
 			progression = &models.Progression{
-				UserID:        userPtr,
-				CaseID:        req.CaseID,
-				CurrentPuzzle: caso.Config.StartingPuzzle,
-				CurrentFocus:  "none",
-				SQLHistory:    []models.SQLHistoryItem{},
-				Active:        true,
-				Completed:     false,
+				UserID:            userPtr,
+				CaseID:            req.CaseID,
+				CurrentPuzzle:     caso.Config.StartingPuzzle,
+				CurrentFocus:      "none",
+				SQLHistory:        []models.SQLHistoryItem{},
+				Active:            true,
+				Completed:         false,
+				ConsecutiveErrors: 0,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
 			}
 			if err := h.MongoManager.UpsertProgression(progression); err != nil {
-				http.Error(w, `{"error": "Erro ao inicializar progresso"}`, http.StatusInternalServerError)
+				http.Error(w, `{"error":"Erro ao inicializar progresso"}`, http.StatusInternalServerError)
 				return
 			}
 		}

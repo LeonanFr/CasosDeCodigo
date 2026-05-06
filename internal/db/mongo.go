@@ -150,7 +150,38 @@ func (m *MongoManager) createIndexes() error {
 		return err
 	}
 
+	teamCaseIndex := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "team_code", Value: 1},
+			{Key: "case_id", Value: 1},
+			{Key: "active", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{
+				"active":    true,
+				"team_code": bson.M{"$exists": true},
+			}),
+	}
+	if _, err := m.ProgressionColl.Indexes().CreateOne(ctx, teamCaseIndex); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (m *MongoManager) GetTeamProgression(teamCode, caseID string) (*models.Progression, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var p models.Progression
+	err := m.ProgressionColl.FindOne(ctx, bson.M{
+		"team_code": teamCode,
+		"case_id":   caseID,
+	}).Decode(&p)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return &p, err
 }
 
 func (m *MongoManager) Close() error {
